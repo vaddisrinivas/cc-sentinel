@@ -500,15 +500,15 @@ class TestConfigOverrideChain:
     def test_config_file_overrides_default_pricing(self, tmp_path):
         from cc_retrospect.core import load_config
         cfg_file = tmp_path / "config.env"
-        cfg_file.write_text("PRICING_SONNET_INPUT_PER_MTOK=99.0\n")
+        cfg_file.write_text("CC_ANALYZE_PRICING__SONNET__INPUT_PER_MTOK=99.0\n")
         cfg = load_config(cfg_file)
         assert cfg.pricing.sonnet.input_per_mtok == 99.0
 
     def test_env_var_overrides_file(self, tmp_path):
         from cc_retrospect.core import load_config
         cfg_file = tmp_path / "config.env"
-        cfg_file.write_text("PRICING_SONNET_INPUT_PER_MTOK=50.0\n")
-        with patch.dict(os.environ, {"CC_ANALYZE_PRICING_SONNET_INPUT_PER_MTOK": "77.0"}):
+        cfg_file.write_text("CC_ANALYZE_PRICING__SONNET__INPUT_PER_MTOK=50.0\n")
+        with patch.dict(os.environ, {"CC_ANALYZE_PRICING__SONNET__INPUT_PER_MTOK": "77.0"}):
             cfg = load_config(cfg_file)
         assert cfg.pricing.sonnet.input_per_mtok == 77.0
 
@@ -516,7 +516,7 @@ class TestConfigOverrideChain:
         from cc_retrospect.core import load_config, compute_cost, UsageRecord
         cfg_file = tmp_path / "config.env"
         # Use a very distinctive rate so we can verify
-        cfg_file.write_text("PRICING_OPUS_INPUT_PER_MTOK=100.0\n")
+        cfg_file.write_text("CC_ANALYZE_PRICING__OPUS__INPUT_PER_MTOK=100.0\n")
         cfg = load_config(cfg_file)
         rec = UsageRecord(
             timestamp="", session_id="", project="", model="claude-opus-4-6",
@@ -531,7 +531,7 @@ class TestConfigOverrideChain:
         from cc_retrospect.core import load_config, HealthAnalyzer
         cfg_file = tmp_path / "config.env"
         # Set very low threshold so a 10-minute session triggers warning
-        cfg_file.write_text("THRESHOLD_LONG_SESSION_MINUTES=5\n")
+        cfg_file.write_text("CC_ANALYZE_THRESHOLDS__LONG_SESSION_MINUTES=5\n")
         cfg = load_config(cfg_file)
 
         from tests.test_core_detectors import _make_summary

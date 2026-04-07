@@ -76,14 +76,14 @@ class TestLoadConfig:
     def test_reads_from_file(self, tmp_path):
         from cc_retrospect.core import load_config
         cfg_file = tmp_path / "config.env"
-        cfg_file.write_text("PRICING_OPUS_INPUT_PER_MTOK=99.0\n# comment\n\nNO_EQUALS\n")
+        cfg_file.write_text("CC_ANALYZE_PRICING__OPUS__INPUT_PER_MTOK=99.0\n# comment\n\nNO_EQUALS\n")
         cfg = load_config(cfg_file)
         assert cfg.pricing.opus.input_per_mtok == 99.0
 
     def test_env_var_override(self, tmp_path):
         from cc_retrospect.core import load_config
         env = {k: v for k, v in os.environ.items()}
-        env["CC_ANALYZE_PRICING_OPUS_INPUT_PER_MTOK"] = "42.0"
+        env["CC_ANALYZE_PRICING__OPUS__INPUT_PER_MTOK"] = "42.0"
         with patch.dict(os.environ, env, clear=True):
             cfg = load_config(tmp_path / "nonexistent.env")
         assert cfg.pricing.opus.input_per_mtok == 42.0
