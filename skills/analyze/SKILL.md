@@ -1,21 +1,15 @@
 ---
 name: analyze
-description: Full Claude Code session retrospective — habits, health, tips, trends, and cost analysis. Use when the user asks about session costs, usage patterns, or wants optimization advice.
+description: Full Claude Code session retrospective — cost, habits, health, waste, model efficiency, savings projections, and behavioral insights. Use when the user asks about session costs, usage patterns, or wants optimization advice.
 user-invocable: true
 allowed-tools: Bash Read Grep Glob
 ---
 
-# cc-retrospect
+# cc-retrospect Full Analysis
 
-You are running a full retrospective on the user's Claude Code sessions. Produce a structured markdown report covering cost, habits, health, waste, and recommendations.
+Run a comprehensive retrospective on the user's Claude Code sessions. Start with precision data, then layer behavioral insights.
 
----
-
-## Step 1 — Collect data (try sources in order, stop at first success)
-
-### Source 1: Python dispatcher (most precise)
-
-Run these and use the output directly:
+## Step 1 — Run all analyzers
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py cost
@@ -25,106 +19,64 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py cost
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py waste
 ```
 
-If both succeed, skip to Step 2. If Python fails, try Source 2.
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py model
+```
 
-### Source 2: Pre-summarized cache
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py savings
+```
 
-Read `~/.cc-retrospect/sessions.jsonl`. Each line is a JSON object with these fields:
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py habits
+```
 
-| Field | Type | Meaning |
-|---|---|---|
-| `project` | string | Project directory name |
-| `start_ts` | string | ISO timestamp of session start |
-| `duration_minutes` | float | Session length in minutes |
-| `message_count` | int | Total messages |
-| `total_cost` | float | USD cost |
-| `total_input_tokens` | int | Fresh input tokens |
-| `total_output_tokens` | int | Output tokens |
-| `total_cache_read_tokens` | int | Cache-read tokens |
-| `frustration_count` | int | Frustration keyword hits |
-| `frustration_words` | object | `{word: count}` map |
-| `subagent_count` | int | Agent tool calls |
-| `tool_counts` | object | `{tool: count}` map |
-| `webfetch_domains` | object | `{domain: count}` map |
-| `model_breakdown` | object | `{model: cost}` map |
-| `tool_chains` | array | `[[tool, length], ...]` consecutive same-tool runs |
-| `mega_prompt_count` | int | User messages > 1000 chars |
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py health
+```
 
-If this file is missing or empty, try Source 3.
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py compare
+```
 
-### Source 3: Raw Claude Code session files (always present)
+If any command fails, fall through to Source 2 (read `~/.cc-retrospect/sessions.jsonl` directly) or Source 3 (raw `~/.claude/projects/**/*.jsonl`).
 
-Glob `~/.claude/projects/**/*.jsonl`. Each file is one session. Each line is a conversation entry:
+## Step 2 — Behavioral analysis (Claude reasons about these)
 
-- `type: "assistant"` entries have `message.usage` (token counts) and `message.model` (model name)
-- `type: "user"` entries have `message.content` (user text)
-- `message.content[].type == "tool_use"` entries have `.name` for tool name
-- `timestamp` on each entry gives timing
+From the raw session data, analyze things Python can't:
 
-**Pricing to compute cost:**
+### Plan mode opportunities
+Scan for sessions with high correction counts ("no", "wrong", "not what I meant"). These suggest the user should have used /plan to align upfront before writing code. Count how many corrections could have been avoided.
 
-| Model | Input $/MTok | Output $/MTok |
-|---|---|---|
-| Opus 4 | 15.00 | 75.00 |
-| Sonnet 4 | 3.00 | 15.00 |
-| Haiku 4 | 0.80 | 4.00 |
+### Volatile hotspots
+Identify files/projects with the highest edit churn. A file edited 50+ times in one session suggests an architectural problem or a debugging loop, not a feature.
 
-**Frustration keywords:** `again`, `ugh`, `still broken`, `not working`, `wrong`, `try again`, `wtf`, `come on`, `seriously`, `nope`
+### Model routing suggestions
+For each project, recommend a default model based on the tools used:
+- Projects using only Read/Edit/Bash/Grep → Sonnet
+- Projects using Agent/WebSearch/EnterPlanMode → Opus
+- Subagent-heavy projects → consider Haiku for subagents
 
-If raw files are also missing, tell the user: "No Claude Code session data found at `~/.claude/projects/`. Run some sessions first."
+### Compaction analysis
+Read `~/.cc-retrospect/compactions.jsonl` if it exists. Report:
+- How many compactions happened, how many tokens were freed
+- Which sessions triggered the most compactions
+- Whether compaction nudges (at 150/300 messages) were heeded
 
----
+## Step 3 — Build the report
 
-## Step 2 — Build the report
+Combine precision numbers with behavioral insights into a single markdown report:
 
-Produce all sections below. Use data from whichever source succeeded.
+1. **Summary table** — sessions, cost, avg duration, frustrations, subagents, compactions
+2. **Cost breakdown** — by project, model, daily
+3. **Model efficiency** — justified Opus vs wasteful Opus, efficiency score
+4. **Savings table** — per-habit with $/month, ranked by impact
+5. **Habits** — peak hours, tools, session patterns
+6. **Health signals** — long sessions, subagent overuse, cost velocity
+7. **Waste signals** — WebFetch→GitHub, chains, mega prompts, model mismatch
+8. **This week vs last week** — trend comparison
+9. **Plan mode opportunities** — where /plan would have saved iterations
+10. **Volatile hotspots** — most-churned files/projects
+11. **Recommendations** — 5-7 specific, data-backed, with actual numbers
 
-### Summary
-
-| Metric | Value |
-|---|---|
-| Total sessions | |
-| Total cost | |
-| Avg session duration | |
-| Avg messages/session | |
-| Total subagent spawns | |
-| Total frustration signals | |
-
-### Cost breakdown
-
-- Total cost by project (top 5) and by model
-- Daily average for last 7 days
-- If > $10 Opus spend: what-if savings if switched to Sonnet
-
-### Habits
-
-- Average and longest session duration
-- Most-used tools (top 10)
-- Peak hours (from `start_ts` hour)
-- Peak days of week
-
-### Health signals
-
-Flag any that apply:
-- Sessions > 120 min or > 200 messages
-- Any session with > 10 subagents
-- Frustration count > 0
-- Cache hit rate < 70%
-- Daily cost > $500
-
-### This week vs last week
-
-Split sessions by `start_ts` into current vs prior calendar week. Compare: cost, sessions, avg duration, frustrations, subagents.
-
-### Waste signals
-
-- WebFetch calls to GitHub/API domains (use `gh` CLI instead)
-- Repeated tool chains (same tool 5+ times consecutively)
-- Mega prompts (user messages > 1000 chars — use file references)
-- Model mismatch (Opus on sessions with no Agent/WebSearch/WebFetch)
-
-### Recommendations
-
-3-5 specific, data-backed recommendations. Quote actual numbers. Name actual projects. No generic advice.
-
-If analysis used Source 3 and is based on sampling, prefix recommendations with confidence level.
+Every recommendation must quote actual numbers from the user's data. No generic advice.

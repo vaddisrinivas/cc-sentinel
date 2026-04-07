@@ -186,5 +186,7 @@ class TestDispatcher:
         import importlib
         dispatch = importlib.import_module("dispatch")
         expected = {"stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use",
-                    "cost", "habits", "health", "tips", "report", "compare", "waste", "hints"}
+                    "pre_compact", "post_compact",
+                    "cost", "habits", "health", "tips", "report", "compare", "waste", "hints",
+                    "savings", "model", "digest"}
         assert expected == set(dispatch._DISPATCH.keys())

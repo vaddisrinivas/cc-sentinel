@@ -46,6 +46,30 @@
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py pre_compact",
+            "timeout": 3000,
+            "suppressOutput": true
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py post_compact",
+            "timeout": 3000,
+            "suppressOutput": true
+          }
+        ]
+      }
     ]
   }
 }

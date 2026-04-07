@@ -570,7 +570,142 @@ class Analyzer(Protocol):
 
 # --- Analyzer registry ---
 
-_BUILTIN_ANALYZERS = [CostAnalyzer, HabitsAnalyzer, HealthAnalyzer, WasteAnalyzer, TipsAnalyzer, CompareAnalyzer]
+class SavingsAnalyzer:
+    name = "savings"
+    description = "Per-habit savings projections based on actual usage data"
+
+    def analyze(self, sessions: list[SessionSummary], config: Config) -> AnalysisResult:
+        if not sessions: return AnalysisResult(title="Savings Projections")
+        th = config.thresholds
+        total_cost = sum(s.total_cost for s in sessions)
+        # figure out time span for monthly projection
+        dates = sorted(s.start_ts[:10] for s in sessions if s.start_ts)
+        if len(dates) >= 2:
+            try:
+                d0 = datetime.fromisoformat(dates[0]); d1 = datetime.fromisoformat(dates[-1])
+                span_days = max(1, (d1 - d0).days)
+            except (ValueError, TypeError): span_days = 30
+        else:
+            span_days = 30
+        monthly_mult = 30.0 / span_days
+        monthly_cost = total_cost * monthly_mult
+
+        rows = [("Current monthly projection", _fmt_cost(monthly_cost)),
+                ("Based on", f"{len(sessions)} sessions over {span_days} days")]
+        recs = []
+
+        # 1. Model switch savings
+        opus_cost = sum(s.model_breakdown.get("claude-opus-4-6", 0) for s in sessions)
+        if opus_cost > 0:
+            simple_opus = sum(s.model_breakdown.get("claude-opus-4-6", 0)
+                             for s in sessions
+                             if not any(t in s.tool_counts for t in {"Agent", "EnterPlanMode", "WebSearch", "WebFetch"}))
+            if simple_opus > 10:
+                monthly_save = simple_opus * 0.8 * monthly_mult
+                recs.append(Recommendation(severity="warning",
+                    description=f"Use /model sonnet for simple tasks ({_fmt_cost(simple_opus)} Opus on Read/Edit/Bash-only sessions)",
+                    estimated_savings=f"{_fmt_cost(monthly_save)}/mo"))
+
+        # 2. Shorter sessions savings
+        long_sessions = [s for s in sessions if s.duration_minutes > th.long_session_minutes]
+        if long_sessions:
+            long_cost = sum(s.total_cost for s in long_sessions)
+            # estimate: shorter sessions use ~40% less due to reduced cache reads
+            monthly_save = long_cost * 0.4 * monthly_mult
+            recs.append(Recommendation(severity="warning",
+                description=f"Break {len(long_sessions)} long sessions (avg {_fmt_duration(sum(s.duration_minutes for s in long_sessions)/len(long_sessions))}) at ~40 messages",
+                estimated_savings=f"{_fmt_cost(monthly_save)}/mo"))
+
+        # 3. Fewer subagents savings
+        total_subs = sum(s.subagent_count for s in sessions)
+        if total_subs > 20:
+            # each subagent costs ~5K cache-read tokens to bootstrap
+            sub_token_cost = total_subs * 5000 * config.pricing.opus.cache_read_per_mtok / 1e6
+            monthly_save = sub_token_cost * monthly_mult
+            recs.append(Recommendation(severity="info",
+                description=f"Replace {total_subs} Agent spawns with direct Grep/Read",
+                estimated_savings=f"{_fmt_cost(monthly_save)}/mo"))
+
+        # 4. WebFetch→gh savings
+        total_wf = sum(sum(c for d, c in s.webfetch_domains.items() if any(wd in d for wd in th.waste_webfetch_domains)) for s in sessions)
+        if total_wf > 10:
+            wf_token_cost = total_wf * 5000 * config.pricing.opus.input_per_mtok / 1e6
+            monthly_save = wf_token_cost * monthly_mult
+            recs.append(Recommendation(severity="info",
+                description=f"Use `gh` CLI instead of {total_wf} WebFetch calls to GitHub",
+                estimated_savings=f"{_fmt_cost(monthly_save)}/mo"))
+
+        # 5. Mega prompt savings
+        total_mega = sum(s.mega_prompt_count for s in sessions)
+        if total_mega > 10:
+            # mega prompts add ~2K extra tokens each to history
+            mega_token_cost = total_mega * 2000 * config.pricing.opus.cache_read_per_mtok / 1e6
+            monthly_save = mega_token_cost * monthly_mult
+            recs.append(Recommendation(severity="info",
+                description=f"Use file references instead of pasting ({total_mega} mega prompts)",
+                estimated_savings=f"{_fmt_cost(monthly_save)}/mo"))
+
+        total_monthly_savings = 0
+        for r in recs:
+            try:
+                s_str = r.estimated_savings.replace("/mo", "").replace("$", "").replace(",", "")
+                total_monthly_savings += float(s_str)
+            except (ValueError, AttributeError): pass
+        if total_monthly_savings > 0:
+            rows.append(("Total potential monthly savings", _fmt_cost(total_monthly_savings)))
+            rows.append(("Projected monthly after savings", _fmt_cost(max(0, monthly_cost - total_monthly_savings))))
+
+        return AnalysisResult(title="Savings Projections", sections=[Section(header="Overview", rows=rows)], recommendations=recs)
+
+
+class ModelAnalyzer:
+    name = "model-efficiency"
+    description = "Analyze model usage efficiency — which sessions could have used cheaper models"
+
+    def analyze(self, sessions: list[SessionSummary], config: Config) -> AnalysisResult:
+        if not sessions: return AnalysisResult(title="Model Efficiency")
+        complex_tools = {"Agent", "EnterPlanMode", "WebSearch", "WebFetch"}
+        rows, recs = [], []
+
+        # Score each session: could it have used a cheaper model?
+        opus_simple, opus_complex, sonnet_total, haiku_total = 0.0, 0.0, 0.0, 0.0
+        mismatch_sessions: list[tuple[str, float, int]] = []  # (project, cost, msg_count)
+        for s in sessions:
+            opus_cost = s.model_breakdown.get("claude-opus-4-6", 0)
+            sonnet_cost = sum(c for m, c in s.model_breakdown.items() if "sonnet" in m.lower())
+            haiku_cost = sum(c for m, c in s.model_breakdown.items() if "haiku" in m.lower())
+            sonnet_total += sonnet_cost; haiku_total += haiku_cost
+            has_complex = any(t in s.tool_counts for t in complex_tools)
+            if opus_cost > 1:
+                if has_complex:
+                    opus_complex += opus_cost
+                else:
+                    opus_simple += opus_cost
+                    mismatch_sessions.append((display_project(s.project), opus_cost, s.message_count))
+
+        total_model_cost = opus_simple + opus_complex + sonnet_total + haiku_total
+        rows.append(("Opus on complex tasks", f"{_fmt_cost(opus_complex)} (justified)"))
+        rows.append(("Opus on simple tasks", f"{_fmt_cost(opus_simple)} (could be Sonnet)"))
+        rows.append(("Sonnet usage", _fmt_cost(sonnet_total)))
+        rows.append(("Haiku usage", _fmt_cost(haiku_total)))
+        if total_model_cost > 0:
+            efficiency = (1 - opus_simple / total_model_cost) * 100
+            rows.append(("Model efficiency score", f"{efficiency:.0f}%"))
+
+        # Top mismatched sessions
+        mismatch_sessions.sort(key=lambda x: x[1], reverse=True)
+        if mismatch_sessions[:5]:
+            recs.append(Recommendation(severity="warning",
+                description=f"Top Opus-on-simple: " + ", ".join(f"{p} ({_fmt_cost(c)})" for p, c, _ in mismatch_sessions[:5])))
+        if opus_simple > 10:
+            recs.append(Recommendation(severity="warning",
+                description="Consider: /model sonnet for Read/Edit/Bash work, /model opus for Agent/WebSearch/planning",
+                estimated_savings=_fmt_cost(opus_simple * 0.8)))
+
+        return AnalysisResult(title="Model Efficiency", sections=[Section(header="Model Usage", rows=rows)], recommendations=recs)
+
+
+_BUILTIN_ANALYZERS = [CostAnalyzer, HabitsAnalyzer, HealthAnalyzer, WasteAnalyzer, TipsAnalyzer, CompareAnalyzer, SavingsAnalyzer, ModelAnalyzer]
 
 
 def get_analyzers(config: Config) -> list:
@@ -671,11 +806,21 @@ def load_all_sessions(config: Config, project_filter: str | None = None) -> list
 
 # --- Live session state ---
 
+class CompactionEvent(BaseModel):
+    timestamp: str = ""
+    session_id: str = ""
+    reason: str = ""  # "manual" or "window_full"
+    tokens_before: int = 0
+    tokens_freed: int = 0
+    message_count_at_compact: int = 0
+
+
 class LiveSessionState(BaseModel):
     message_count: int = 0; tool_count: int = 0; cost_estimate: float = 0.0
     prev_tool: str = ""; chain_length: int = 0; webfetch_github_count: int = 0
     subagent_count: int = 0; bash_chain_warned: bool = False
     compact_nudged: bool = False; compact_nudged_2: bool = False; subagent_warned: bool = False
+    compaction_count: int = 0
 
     def __getitem__(self, key: str):
         return getattr(self, key)
@@ -740,6 +885,52 @@ def run_report(payload: dict = {}, *, config: Config | None = None) -> int:
     report_path.write_text(report, encoding="utf-8")
     print(f"Report saved to {report_path}")
     print(report)
+    return 0
+
+
+def run_savings(payload: dict = {}, *, config: Config | None = None) -> int:   return _render(SavingsAnalyzer, config=config)
+def run_model_efficiency(payload: dict = {}, *, config: Config | None = None) -> int: return _render(ModelAnalyzer, config=config)
+
+
+def run_digest(payload: dict = {}, *, config: Config | None = None) -> int:
+    """Daily digest: yesterday's sessions analyzed with savings + model efficiency."""
+    config = config or load_config()
+    sessions = load_all_sessions(config)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    day_sessions = [s for s in sessions if s.start_ts and yesterday <= s.start_ts[:10] <= today]
+    if not day_sessions:
+        print(f"[cc-retrospect] No sessions found for {yesterday}.")
+        return 0
+    parts = [f"## cc-retrospect Daily Digest ({yesterday})", ""]
+    day_cost = sum(s.total_cost for s in day_sessions)
+    day_msgs = sum(s.message_count for s in day_sessions)
+    day_frust = sum(s.frustration_count for s in day_sessions)
+    day_subs = sum(s.subagent_count for s in day_sessions)
+    compactions = _load_compactions(config, since=yesterday)
+    parts.append(f"**{len(day_sessions)} sessions** | {_fmt_cost(day_cost)} | {day_msgs} msgs | {day_frust} frustrations | {day_subs} subagents | {len(compactions)} compactions")
+    parts.append("")
+    # Model efficiency for the day
+    model_result = ModelAnalyzer().analyze(day_sessions, config)
+    parts.append(model_result.render_markdown())
+    # Savings for the day
+    savings_result = SavingsAnalyzer().analyze(day_sessions, config)
+    parts.append(savings_result.render_markdown())
+    # Top 3 most expensive sessions
+    expensive = sorted(day_sessions, key=lambda s: s.total_cost, reverse=True)[:3]
+    if expensive:
+        parts.append("### Most Expensive Sessions")
+        parts.append("")
+        for s in expensive:
+            models = ", ".join(f"{m}: {_fmt_cost(c)}" for m, c in sorted(s.model_breakdown.items(), key=lambda x: x[1], reverse=True))
+            parts.append(f"- **{display_project(s.project)}**: {_fmt_cost(s.total_cost)}, {_fmt_duration(s.duration_minutes)}, {s.message_count} msgs ({models})")
+        parts.append("")
+    # Compaction summary
+    if compactions:
+        total_freed = sum(c.get("tokens_freed", 0) for c in compactions)
+        parts.append(f"### Compactions: {len(compactions)} events, {_fmt_tokens(total_freed)} tokens freed")
+        parts.append("")
+    print("\n".join(parts))
     return 0
 
 
@@ -834,6 +1025,25 @@ def run_session_start_hook(payload: dict, *, config: Config | None = None) -> in
                         if len(waste_tips) >= 2: break
                 if waste_tips: lines.append("Top waste: " + "; ".join(waste_tips))
             except OSError: pass
+    # Daily digest: first session of a new day gets yesterday's summary
+    if _should_show_daily_digest(config):
+        try:
+            sessions = load_all_sessions(config)
+            yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+            day_sessions = [s for s in sessions if s.start_ts and s.start_ts[:10] == yesterday]
+            if day_sessions:
+                day_cost = sum(s.total_cost for s in day_sessions)
+                day_frust = sum(s.frustration_count for s in day_sessions)
+                day_subs = sum(s.subagent_count for s in day_sessions)
+                compactions = _load_compactions(config, since=yesterday)
+                lines.append(f"Yesterday: {len(day_sessions)} sessions, {_fmt_cost(day_cost)}, {day_frust} frustrations, {day_subs} subagents, {len(compactions)} compactions.")
+                # Quick model efficiency note
+                opus_simple = sum(s.model_breakdown.get("claude-opus-4-6", 0) for s in day_sessions
+                                  if not any(t in s.tool_counts for t in {"Agent", "EnterPlanMode", "WebSearch", "WebFetch"}))
+                if opus_simple > 10:
+                    lines.append(f"Model tip: {_fmt_cost(opus_simple)} spent on Opus for simple tasks — try /model sonnet.")
+        except Exception as e:
+            logger.debug("Daily digest failed: %s", e)
     if lines and config.hints.session_start:
         print("[cc-retrospect] " + " ".join(lines))
     _init_live_state(config)
@@ -901,3 +1111,70 @@ def run_post_tool_use(payload: dict, *, config: Config | None = None) -> int:
     if hints and config.hints.post_tool:
         for hint in hints: print(f"[cc-retrospect] {hint}")
     return 0
+
+
+# --- Compaction hooks ---
+
+def _compactions_path(config: Config) -> Path:
+    return config.data_dir / "compactions.jsonl"
+
+
+def _load_compactions(config: Config, since: str = "") -> list[dict]:
+    path = _compactions_path(config)
+    events = []
+    for entry in iter_jsonl(path):
+        if since and entry.get("timestamp", "") < since:
+            continue
+        events.append(entry)
+    return events
+
+
+def run_pre_compact(payload: dict, *, config: Config | None = None) -> int:
+    """Log compaction start — fires when context window fills or user runs /compact."""
+    config = config or load_config()
+    live = _load_live_state(config)
+    live.compaction_count += 1
+    _save_live_state(config, live)
+    event = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "session_id": payload.get("session_id", ""),
+        "phase": "pre",
+        "reason": payload.get("compact_reason", "unknown"),
+        "message_count_at_compact": live.message_count,
+    }
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    with open(_compactions_path(config), "a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+    return 0
+
+
+def run_post_compact(payload: dict, *, config: Config | None = None) -> int:
+    """Log compaction result — tokens freed, summary produced."""
+    config = config or load_config()
+    event = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "session_id": payload.get("session_id", ""),
+        "phase": "post",
+        "reason": payload.get("compact_reason", "unknown"),
+        "tokens_freed": payload.get("tokens_freed", 0),
+    }
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    with open(_compactions_path(config), "a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+    return 0
+
+
+# --- Daily digest injection on SessionStart ---
+
+def _should_show_daily_digest(config: Config) -> bool:
+    """True if this is the first session of a new day."""
+    state_path = config.data_dir / "state.json"
+    if not state_path.exists(): return False
+    try: state = json.loads(state_path.read_text())
+    except (json.JSONDecodeError, OSError): return False
+    last_ts = state.get("last_ts", "")
+    if not last_ts: return False
+    try:
+        last_date = datetime.fromisoformat(last_ts).date()
+        return last_date < datetime.now(timezone.utc).date()
+    except (ValueError, TypeError): return False

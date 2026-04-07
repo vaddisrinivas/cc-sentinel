@@ -30,8 +30,10 @@ if str(PLUGIN_ROOT) not in sys.path:
 from cc_retrospect.core import (
     run_cost, run_habits, run_health, run_tips,
     run_report, run_compare, run_waste, run_hints,
+    run_savings, run_model_efficiency, run_digest,
     run_stop_hook, run_session_start_hook,
     run_pre_tool_use, run_post_tool_use,
+    run_pre_compact, run_post_compact,
 )
 
 _DISPATCH = {
@@ -40,6 +42,8 @@ _DISPATCH = {
     "session_start_hook": run_session_start_hook,
     "pre_tool_use": run_pre_tool_use,
     "post_tool_use": run_post_tool_use,
+    "pre_compact": run_pre_compact,
+    "post_compact": run_post_compact,
     # Commands (no stdin)
     "cost": run_cost,
     "habits": run_habits,
@@ -49,9 +53,12 @@ _DISPATCH = {
     "compare": run_compare,
     "waste": run_waste,
     "hints": run_hints,
+    "savings": run_savings,
+    "model": run_model_efficiency,
+    "digest": run_digest,
 }
 
-_HOOKS = {"stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use"}
+_HOOKS = {"stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use", "pre_compact", "post_compact"}
 
 
 def _read_payload() -> dict:
