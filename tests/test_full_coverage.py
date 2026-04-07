@@ -4,11 +4,9 @@ Each class targets a specific uncovered region identified by coverage report.
 """
 from __future__ import annotations
 
-import importlib
 import json
 import os
 import sys
-import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -1118,7 +1116,7 @@ class TestWasteAnalyzerZeroOpusCost:
 class TestCacheHitPath:
     def test_cache_hit_skips_disk_analysis(self, tmp_path):
         """When session_key matches cache, it uses cached summary instead of re-reading."""
-        from cc_sentinel.core import load_all_sessions, Config, session_summary_to_dict
+        from cc_sentinel.core import load_all_sessions, Config
         # Create a JSONL session file named by session_id (as real Claude Code does)
         claude_dir = tmp_path / ".claude"
         proj_dir = claude_dir / "projects" / "-Users-test-myapp"

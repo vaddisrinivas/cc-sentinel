@@ -1,12 +1,9 @@
 """Tests for JSONL parsing, token extraction, and cost calculation."""
 from __future__ import annotations
 
-import json
+import sys
 import tempfile
 from pathlib import Path
-
-import pytest
-import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))

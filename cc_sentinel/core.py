@@ -363,8 +363,6 @@ def analyze_session(jsonl_path: Path, project: str, config: Config) -> SessionSu
     prev_tool: str | None = None
     chain_length = 0
     chain_records: list[tuple[str, int]] = []
-    threshold = config.thresholds.tool_chain_threshold
-
     keywords = [k.lower() for k in config.thresholds.frustration_keywords]
 
     for entry in iter_jsonl(jsonl_path):
@@ -666,7 +664,7 @@ class CostAnalyzer:
             if savings > 10:
                 recs.append(Recommendation(
                     severity="warning",
-                    description=f"If all Opus usage switched to Sonnet, estimated savings",
+                    description="If all Opus usage switched to Sonnet, estimated savings",
                     estimated_savings=_fmt_cost(savings),
                 ))
 
@@ -870,7 +868,6 @@ class WasteAnalyzer:
                     all_chains[tool].append(length)
 
         for tool, lengths in sorted(all_chains.items(), key=lambda x: sum(x[1]), reverse=True):
-            total_in_chains = sum(lengths)
             recs.append(Recommendation(
                 severity="info",
                 description=f"{len(lengths)} consecutive {tool} chains (longest: {max(lengths)}). Combine related calls or use scripts.",
@@ -1186,7 +1183,6 @@ def run_report(payload: dict, config: Config | None = None) -> int:
 def run_hints(payload: dict, config: Config | None = None) -> int:
     """Show and configure which inline hints are enabled."""
     config = config or load_config()
-    config_path = config.data_dir / "config.env"
 
     lines = [
         "## cc-sentinel Hint Settings",
@@ -1218,7 +1214,6 @@ def run_stop_hook(payload: dict, config: Config | None = None) -> int:
         return 0
 
     # Derive project directory name
-    home = str(Path.home())
     proj_dir_name = cwd.replace("/", "-")
     if proj_dir_name.startswith("-"):
         pass  # already in the right format

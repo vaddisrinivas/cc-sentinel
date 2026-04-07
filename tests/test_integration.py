@@ -376,7 +376,7 @@ class TestCustomAnalyzerDiscovery:
     def test_custom_analyzer_produces_result(self, tmp_env):
         claude_dir, data_dir, config = tmp_env
         self._write_custom_analyzer(data_dir)
-        from cc_sentinel.core import get_analyzers, SessionSummary
+        from cc_sentinel.core import get_analyzers
         analyzers = get_analyzers(config)
         custom = next(a for a in analyzers if a.name == "custom-test")
         result = custom.analyze([], config)
@@ -413,10 +413,7 @@ class TestFullSessionLifecycle:
     def test_lifecycle_updates_live_state(self, tmp_env):
         claude_dir, data_dir, config = tmp_env
 
-        from cc_sentinel.core import (
-            _init_live_state, _load_live_state,
-            run_pre_tool_use, run_post_tool_use,
-        )
+        from cc_sentinel.core import _init_live_state, _load_live_state, run_post_tool_use
         _init_live_state(config)
         run_post_tool_use({"tool_name": "Read"}, config=config)
         run_post_tool_use({"tool_name": "Edit"}, config=config)

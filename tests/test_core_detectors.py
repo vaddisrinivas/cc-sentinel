@@ -3,10 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -223,7 +220,7 @@ class TestAnalyzerProtocol:
     def test_all_analyzers_return_analysis_result(self):
         from cc_sentinel.core import (
             CostAnalyzer, HabitsAnalyzer, HealthAnalyzer,
-            WasteAnalyzer, TipsAnalyzer, CompareAnalyzer,
+            WasteAnalyzer, TipsAnalyzer,
             AnalysisResult, default_config,
         )
         sessions = [_make_summary()]
