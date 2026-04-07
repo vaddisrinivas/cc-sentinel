@@ -4,8 +4,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -16,7 +14,7 @@ class TestAnalyzeSession:
     """Full session analysis from a JSONL file."""
 
     def test_basic_session_summary(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
@@ -26,7 +24,7 @@ class TestAnalyzeSession:
         assert summary.user_message_count == 4
 
     def test_token_totals(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
@@ -38,7 +36,7 @@ class TestAnalyzeSession:
         assert summary.total_output_tokens == expected_output
 
     def test_tool_counts(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
@@ -49,7 +47,7 @@ class TestAnalyzeSession:
         assert summary.tool_counts.get("Edit", 0) == 1
 
     def test_frustration_detection(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
@@ -59,7 +57,7 @@ class TestAnalyzeSession:
         assert "again" in summary.frustration_words
 
     def test_mega_prompt_detection(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
@@ -67,7 +65,7 @@ class TestAnalyzeSession:
         assert summary.mega_prompt_count >= 1
 
     def test_webfetch_domain_tracking(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
@@ -75,14 +73,14 @@ class TestAnalyzeSession:
         assert summary.webfetch_domains["github.com"] >= 1
 
     def test_subagent_counting(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
         assert summary.subagent_count >= 1
 
     def test_tool_chain_detection(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
@@ -91,7 +89,7 @@ class TestAnalyzeSession:
         assert "Read" in chain_names or "Bash" in chain_names
 
     def test_duration_calculation(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
@@ -100,14 +98,14 @@ class TestAnalyzeSession:
         assert abs(summary.duration_minutes - 6.0) < 1.0
 
     def test_cost_is_positive(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
         assert summary.total_cost > 0
 
     def test_sonnet_session(self):
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sonnet_session.jsonl", "simple", default_config()
         )
@@ -117,7 +115,7 @@ class TestAnalyzeSession:
 
     def test_malformed_session(self):
         """Parser should not crash on malformed JSONL."""
-        from cc_sentinel.core import analyze_session, default_config
+        from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "malformed.jsonl", "broken", default_config()
         )
@@ -130,7 +128,7 @@ class TestSessionSummarySerialize:
     """SessionSummary should be serializable to/from JSON for sessions.jsonl caching."""
 
     def test_roundtrip(self):
-        from cc_sentinel.core import analyze_session, default_config, session_summary_to_dict, session_summary_from_dict
+        from cc_retrospect.core import analyze_session, default_config, session_summary_to_dict, session_summary_from_dict
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )

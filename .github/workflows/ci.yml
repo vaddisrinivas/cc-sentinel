@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: pip install -r requirements-test.txt
+
+      - name: Run unit and integration tests
+        run: |
+          pytest tests/ -v \
+            --tb=short \
+            --cov=cc_retrospect \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            -p no:cacheprovider
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.12'
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install linting tools
+        run: pip install pyflakes
+
+      - name: Run pyflakes on source
+        run: python -m pyflakes cc_retrospect/
+
+      - name: Run pyflakes on tests
+        run: python -m pyflakes tests/
+
+      - name: Check dispatch script
+        run: python -m pyflakes scripts/dispatch.py
+
+  smoke:
+    name: Smoke test dispatch script
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dispatch hints command runs without error
+        run: python scripts/dispatch.py hints
+
+      - name: Dispatch cost with empty project dir
+        env:
+          # Point cc-retrospect at a tmp dir so nothing tries to read ~/.claude
+          CC_ANALYZE_DATA_DIR: /tmp/cc-retrospect-smoke
+        run: |
+          mkdir -p /tmp/cc-retrospect-smoke
+          # cost command should handle zero sessions gracefully
+          python -c "
+          import sys, os, json
+          sys.path.insert(0, '.')
+          from cc_retrospect.core import Config, CostAnalyzer
+          from pathlib import Path
+          cfg = Config(
+            data_dir=Path('/tmp/cc-retrospect-smoke'),
+            claude_dir=Path('/tmp/cc-retrospect-smoke/claude'),
+          )
+          result = CostAnalyzer().analyze([], cfg)
+          assert result is not None
+          print('Smoke test passed:', result.title)
+          "

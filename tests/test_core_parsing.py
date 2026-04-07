@@ -1,12 +1,9 @@
 """Tests for JSONL parsing, token extraction, and cost calculation."""
 from __future__ import annotations
 
-import json
+import sys
 import tempfile
 from pathlib import Path
-
-import pytest
-import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -18,12 +15,12 @@ class TestIterJsonl:
     """Streaming JSONL parser must handle real-world edge cases."""
 
     def test_parses_valid_lines(self):
-        from cc_sentinel.core import iter_jsonl
+        from cc_retrospect.core import iter_jsonl
         results = list(iter_jsonl(FIXTURES / "sample_session.jsonl"))
         assert len(results) == 12  # 4 user + 8 assistant entries
 
     def test_skips_malformed_lines(self):
-        from cc_sentinel.core import iter_jsonl
+        from cc_retrospect.core import iter_jsonl
         results = list(iter_jsonl(FIXTURES / "malformed.jsonl"))
         # "not valid json at all" and empty line should be skipped
         assert all(isinstance(r, dict) for r in results)
@@ -31,7 +28,7 @@ class TestIterJsonl:
         assert len(results) == 4
 
     def test_empty_file(self):
-        from cc_sentinel.core import iter_jsonl
+        from cc_retrospect.core import iter_jsonl
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
             f.write("")
             f.flush()
@@ -39,7 +36,7 @@ class TestIterJsonl:
         assert results == []
 
     def test_nonexistent_file(self):
-        from cc_sentinel.core import iter_jsonl
+        from cc_retrospect.core import iter_jsonl
         results = list(iter_jsonl(Path("/nonexistent/file.jsonl")))
         assert results == []
 
@@ -48,7 +45,7 @@ class TestExtractUsage:
     """Usage extraction from assistant messages."""
 
     def test_extracts_opus_usage(self):
-        from cc_sentinel.core import extract_usage
+        from cc_retrospect.core import extract_usage
         entry = {
             "type": "assistant",
             "message": {
@@ -76,17 +73,17 @@ class TestExtractUsage:
         assert rec.project == "myproject"
 
     def test_returns_none_for_user_messages(self):
-        from cc_sentinel.core import extract_usage
+        from cc_retrospect.core import extract_usage
         entry = {"type": "user", "message": {"content": "hello"}}
         assert extract_usage(entry, "proj") is None
 
     def test_returns_none_for_missing_usage(self):
-        from cc_sentinel.core import extract_usage
+        from cc_retrospect.core import extract_usage
         entry = {"type": "assistant", "message": {"model": "claude-opus-4-6"}}
         assert extract_usage(entry, "proj") is None
 
     def test_handles_missing_optional_fields(self):
-        from cc_sentinel.core import extract_usage
+        from cc_retrospect.core import extract_usage
         entry = {
             "type": "assistant",
             "message": {
@@ -108,7 +105,7 @@ class TestComputeCost:
     """Cost calculation at known API rates, verified to the penny."""
 
     def test_opus_cost(self):
-        from cc_sentinel.core import compute_cost, UsageRecord, default_config
+        from cc_retrospect.core import compute_cost, UsageRecord, default_config
         rec = UsageRecord(
             timestamp="", session_id="", project="", model="claude-opus-4-6",
             input_tokens=1_000_000, output_tokens=1_000_000,
@@ -121,7 +118,7 @@ class TestComputeCost:
         assert abs(cost - expected) < 0.01, f"Expected {expected}, got {cost}"
 
     def test_sonnet_cost(self):
-        from cc_sentinel.core import compute_cost, UsageRecord, default_config
+        from cc_retrospect.core import compute_cost, UsageRecord, default_config
         rec = UsageRecord(
             timestamp="", session_id="", project="", model="claude-sonnet-4-6",
             input_tokens=1_000_000, output_tokens=1_000_000,
@@ -133,7 +130,7 @@ class TestComputeCost:
         assert abs(cost - expected) < 0.01, f"Expected {expected}, got {cost}"
 
     def test_haiku_cost(self):
-        from cc_sentinel.core import compute_cost, UsageRecord, default_config
+        from cc_retrospect.core import compute_cost, UsageRecord, default_config
         rec = UsageRecord(
             timestamp="", session_id="", project="", model="claude-haiku-4-5-20251001",
             input_tokens=1_000_000, output_tokens=1_000_000,
@@ -145,7 +142,7 @@ class TestComputeCost:
         assert abs(cost - expected) < 0.01, f"Expected {expected}, got {cost}"
 
     def test_zero_tokens_zero_cost(self):
-        from cc_sentinel.core import compute_cost, UsageRecord, default_config
+        from cc_retrospect.core import compute_cost, UsageRecord, default_config
         rec = UsageRecord(
             timestamp="", session_id="", project="", model="claude-opus-4-6",
             input_tokens=0, output_tokens=0,
@@ -155,7 +152,7 @@ class TestComputeCost:
         assert compute_cost(rec, default_config().pricing) == 0.0
 
     def test_unknown_model_defaults_to_opus(self):
-        from cc_sentinel.core import compute_cost, UsageRecord, default_config
+        from cc_retrospect.core import compute_cost, UsageRecord, default_config
         rec = UsageRecord(
             timestamp="", session_id="", project="", model="some-future-model",
             input_tokens=1_000_000, output_tokens=0,
@@ -170,18 +167,18 @@ class TestDisplayProject:
     """Project name cleaning for display."""
 
     def test_strips_full_prefix(self):
-        from cc_sentinel.core import display_project
+        from cc_retrospect.core import display_project
         assert display_project("-Users-testuser-Projects-later") == "later"
 
     def test_strips_partial_prefix(self):
-        from cc_sentinel.core import display_project
+        from cc_retrospect.core import display_project
         assert display_project("-Users-testuser-moltsnip") == "moltsnip"
 
     def test_handles_worktrees(self):
-        from cc_sentinel.core import display_project
+        from cc_retrospect.core import display_project
         result = display_project("-Users-testuser-moltsnip--claude-worktrees-nifty-mendeleev")
         assert "moltsnip" in result
 
     def test_passthrough_for_simple_names(self):
-        from cc_sentinel.core import display_project
+        from cc_retrospect.core import display_project
         assert display_project("myproject") == "myproject"

@@ -1,5 +1,5 @@
 {
-  "name": "cc-sentinel",
+  "name": "cc-retrospect",
   "owner": {
     "name": "vaddisrinivas"
   },
@@ -9,7 +9,7 @@
   },
   "plugins": [
     {
-      "name": "cc-sentinel",
+      "name": "cc-retrospect",
       "source": "./",
       "description": "Real-time waste interception, auto-compact, session health tracking, and optimization tips for Claude Code."
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cc-sentinel unified dispatcher. One script handles all hooks and commands.
+"""cc-retrospect unified dispatcher. One script handles all hooks and commands.
 
 Usage:
   Hooks (receive JSON on stdin):
@@ -27,7 +27,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
-from cc_sentinel.core import (
+from cc_retrospect.core import (
     run_cost, run_habits, run_health, run_tips,
     run_report, run_compare, run_waste, run_hints,
     run_stop_hook, run_session_start_hook,

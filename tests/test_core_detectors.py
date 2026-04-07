@@ -3,10 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -16,7 +13,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 def _make_summary(**overrides):
     """Create a minimal SessionSummary with overrides."""
-    from cc_sentinel.core import SessionSummary
+    from cc_retrospect.core import SessionSummary
     defaults = dict(
         session_id="test-sess",
         project="testproj",
@@ -51,7 +48,7 @@ class TestWasteAnalyzer:
     """Waste detection from session summaries."""
 
     def test_detects_webfetch_github(self):
-        from cc_sentinel.core import WasteAnalyzer, default_config
+        from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(webfetch_domains={"github.com": 50})]
         analyzer = WasteAnalyzer()
         result = analyzer.analyze(sessions, default_config())
@@ -59,7 +56,7 @@ class TestWasteAnalyzer:
         assert any("github" in d.lower() or "gh" in d.lower() for d in descriptions)
 
     def test_detects_tool_chains(self):
-        from cc_sentinel.core import WasteAnalyzer, default_config
+        from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(tool_chains=[("Bash", 12), ("Read", 8)])]
         analyzer = WasteAnalyzer()
         result = analyzer.analyze(sessions, default_config())
@@ -67,7 +64,7 @@ class TestWasteAnalyzer:
         assert any("chain" in d.lower() or "consecutive" in d.lower() for d in descriptions)
 
     def test_detects_mega_prompts(self):
-        from cc_sentinel.core import WasteAnalyzer, default_config
+        from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(mega_prompt_count=15)]
         analyzer = WasteAnalyzer()
         result = analyzer.analyze(sessions, default_config())
@@ -75,7 +72,7 @@ class TestWasteAnalyzer:
         assert any("prompt" in d.lower() or "paste" in d.lower() for d in descriptions)
 
     def test_no_waste_clean_session(self):
-        from cc_sentinel.core import WasteAnalyzer, default_config
+        from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary()]
         analyzer = WasteAnalyzer()
         result = analyzer.analyze(sessions, default_config())
@@ -84,7 +81,7 @@ class TestWasteAnalyzer:
 
     def test_detects_model_mismatch(self):
         """Simple sessions using Opus should suggest Sonnet."""
-        from cc_sentinel.core import WasteAnalyzer, default_config
+        from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(
             model_breakdown={"claude-opus-4-6": 500.0},
             tool_counts={"Read": 5, "Bash": 3},  # simple tools only
@@ -101,7 +98,7 @@ class TestHealthAnalyzer:
     """Health checks from session data and config."""
 
     def test_flags_long_sessions(self):
-        from cc_sentinel.core import HealthAnalyzer, default_config
+        from cc_retrospect.core import HealthAnalyzer, default_config
         sessions = [_make_summary(duration_minutes=300, message_count=500)]
         analyzer = HealthAnalyzer()
         result = analyzer.analyze(sessions, default_config())
@@ -109,7 +106,7 @@ class TestHealthAnalyzer:
         assert any("session" in d.lower() and ("long" in d.lower() or "duration" in d.lower() or "clear" in d.lower()) for d in descriptions)
 
     def test_flags_subagent_overuse(self):
-        from cc_sentinel.core import HealthAnalyzer, default_config
+        from cc_retrospect.core import HealthAnalyzer, default_config
         sessions = [_make_summary(subagent_count=25)]
         analyzer = HealthAnalyzer()
         result = analyzer.analyze(sessions, default_config())
@@ -117,7 +114,7 @@ class TestHealthAnalyzer:
         assert any("subagent" in d.lower() or "agent" in d.lower() for d in descriptions)
 
     def test_flags_high_cost_velocity(self):
-        from cc_sentinel.core import HealthAnalyzer, default_config
+        from cc_retrospect.core import HealthAnalyzer, default_config
         sessions = [
             _make_summary(
                 total_cost=600.0,
@@ -131,7 +128,7 @@ class TestHealthAnalyzer:
         assert any("cost" in d.lower() or "spending" in d.lower() or "velocity" in d.lower() for d in descriptions)
 
     def test_flags_frustration_loops(self):
-        from cc_sentinel.core import HealthAnalyzer, default_config
+        from cc_retrospect.core import HealthAnalyzer, default_config
         sessions = [_make_summary(frustration_count=10, frustration_words={"ugh": 5, "again": 5})]
         analyzer = HealthAnalyzer()
         result = analyzer.analyze(sessions, default_config())
@@ -139,7 +136,7 @@ class TestHealthAnalyzer:
         assert any("frustration" in d.lower() or "loop" in d.lower() for d in descriptions)
 
     def test_healthy_session_no_critical(self):
-        from cc_sentinel.core import HealthAnalyzer, default_config
+        from cc_retrospect.core import HealthAnalyzer, default_config
         sessions = [_make_summary(
             duration_minutes=30,
             message_count=20,
@@ -157,7 +154,7 @@ class TestHabitsAnalyzer:
     """Behavioral pattern analysis."""
 
     def test_produces_output(self):
-        from cc_sentinel.core import HabitsAnalyzer, default_config
+        from cc_retrospect.core import HabitsAnalyzer, default_config
         sessions = [
             _make_summary(start_ts="2026-04-05T10:00:00Z"),
             _make_summary(start_ts="2026-04-05T22:00:00Z", session_id="s2"),
@@ -168,7 +165,7 @@ class TestHabitsAnalyzer:
         assert len(result.sections) > 0
 
     def test_detects_peak_hours(self):
-        from cc_sentinel.core import HabitsAnalyzer, default_config
+        from cc_retrospect.core import HabitsAnalyzer, default_config
         sessions = [
             _make_summary(start_ts=f"2026-04-05T22:{i:02d}:00Z", session_id=f"s{i}")
             for i in range(10)
@@ -184,7 +181,7 @@ class TestCostAnalyzer:
     """Cost analysis and what-if scenarios."""
 
     def test_produces_output(self):
-        from cc_sentinel.core import CostAnalyzer, default_config
+        from cc_retrospect.core import CostAnalyzer, default_config
         sessions = [_make_summary()]
         analyzer = CostAnalyzer()
         result = analyzer.analyze(sessions, default_config())
@@ -193,7 +190,7 @@ class TestCostAnalyzer:
 
     def test_whatif_sonnet(self):
         """What-if should show savings if using Sonnet."""
-        from cc_sentinel.core import CostAnalyzer, default_config
+        from cc_retrospect.core import CostAnalyzer, default_config
         sessions = [_make_summary(
             model_breakdown={"claude-opus-4-6": 1000.0},
             total_cost=1000.0,
@@ -208,7 +205,7 @@ class TestAnalyzerProtocol:
     """All analyzers must follow the protocol."""
 
     def test_all_analyzers_have_name_and_description(self):
-        from cc_sentinel.core import (
+        from cc_retrospect.core import (
             CostAnalyzer, HabitsAnalyzer, HealthAnalyzer,
             WasteAnalyzer, TipsAnalyzer, CompareAnalyzer,
         )
@@ -221,9 +218,9 @@ class TestAnalyzerProtocol:
             assert len(a.description) > 0
 
     def test_all_analyzers_return_analysis_result(self):
-        from cc_sentinel.core import (
+        from cc_retrospect.core import (
             CostAnalyzer, HabitsAnalyzer, HealthAnalyzer,
-            WasteAnalyzer, TipsAnalyzer, CompareAnalyzer,
+            WasteAnalyzer, TipsAnalyzer,
             AnalysisResult, default_config,
         )
         sessions = [_make_summary()]
@@ -234,7 +231,7 @@ class TestAnalyzerProtocol:
             assert isinstance(result, AnalysisResult), f"{cls.__name__} didn't return AnalysisResult"
 
     def test_analyzers_handle_empty_sessions(self):
-        from cc_sentinel.core import (
+        from cc_retrospect.core import (
             CostAnalyzer, HabitsAnalyzer, HealthAnalyzer,
             WasteAnalyzer, TipsAnalyzer,
             default_config,
@@ -250,7 +247,7 @@ class TestAnalysisResultRendering:
     """AnalysisResult should render as text, markdown, and JSON."""
 
     def test_render_text(self):
-        from cc_sentinel.core import AnalysisResult, Section, Recommendation
+        from cc_retrospect.core import AnalysisResult, Section, Recommendation
         result = AnalysisResult(
             title="Test",
             sections=[Section(header="Stats", rows=[("Cost", "$100")])],
@@ -262,7 +259,7 @@ class TestAnalysisResultRendering:
         assert "Too expensive" in text
 
     def test_render_markdown(self):
-        from cc_sentinel.core import AnalysisResult, Section, Recommendation
+        from cc_retrospect.core import AnalysisResult, Section, Recommendation
         result = AnalysisResult(
             title="Test",
             sections=[Section(header="Stats", rows=[("Cost", "$100")])],
@@ -273,7 +270,7 @@ class TestAnalysisResultRendering:
         assert "$100" in md
 
     def test_render_json(self):
-        from cc_sentinel.core import AnalysisResult, Section, Recommendation
+        from cc_retrospect.core import AnalysisResult, Section, Recommendation
         result = AnalysisResult(
             title="Test",
             sections=[Section(header="Stats", rows=[("Cost", "$100")])],

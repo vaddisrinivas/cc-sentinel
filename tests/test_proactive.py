@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,15 +14,15 @@ sys.path.insert(0, str(ROOT))
 
 @pytest.fixture
 def tmp_data_dir(tmp_path):
-    """Create a temporary data dir for cc-sentinel state."""
-    data_dir = tmp_path / ".cc-sentinel"
+    """Create a temporary data dir for cc-retrospect state."""
+    data_dir = tmp_path / ".cc-retrospect"
     data_dir.mkdir()
     return data_dir
 
 
 @pytest.fixture
 def config(tmp_data_dir):
-    from cc_sentinel.core import Config
+    from cc_retrospect.core import Config
     return Config(data_dir=tmp_data_dir)
 
 
@@ -31,9 +30,9 @@ class TestPreToolUse:
     """PreToolUse hook should intercept waste in real-time."""
 
     def test_webfetch_github_hint(self, config, capsys):
-        from cc_sentinel.core import run_pre_tool_use, _init_live_state
+        from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_pre_tool_use({
                 "tool_name": "WebFetch",
                 "tool_input": {"url": "https://github.com/org/repo/issues/42"},
@@ -42,9 +41,9 @@ class TestPreToolUse:
         assert "gh" in out.lower() or "github" in out.lower()
 
     def test_no_hint_for_non_github_webfetch(self, config, capsys):
-        from cc_sentinel.core import run_pre_tool_use, _init_live_state
+        from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_pre_tool_use({
                 "tool_name": "WebFetch",
                 "tool_input": {"url": "https://docs.python.org/3/library/json.html"},
@@ -53,9 +52,9 @@ class TestPreToolUse:
         assert out == ""
 
     def test_agent_simple_search_hint(self, config, capsys):
-        from cc_sentinel.core import run_pre_tool_use, _init_live_state
+        from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_pre_tool_use({
                 "tool_name": "Agent",
                 "tool_input": {"prompt": "search for the login function", "subagent_type": "Explore"},
@@ -64,9 +63,9 @@ class TestPreToolUse:
         assert "grep" in out.lower() or "search" in out.lower()
 
     def test_bash_chain_detection(self, config, capsys):
-        from cc_sentinel.core import run_pre_tool_use, _init_live_state
+        from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             # Simulate 5 consecutive Bash calls
             for i in range(5):
                 run_pre_tool_use({"tool_name": "Bash", "tool_input": {"command": f"cmd{i}"}})
@@ -74,9 +73,9 @@ class TestPreToolUse:
         assert "consecutive" in out.lower() or "combining" in out.lower() or "bash" in out.lower()
 
     def test_no_hint_for_short_bash_chain(self, config, capsys):
-        from cc_sentinel.core import run_pre_tool_use, _init_live_state
+        from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_pre_tool_use({"tool_name": "Bash", "tool_input": {"command": "ls"}})
             run_pre_tool_use({"tool_name": "Bash", "tool_input": {"command": "pwd"}})
         out = capsys.readouterr().out
@@ -87,42 +86,42 @@ class TestPostToolUse:
     """PostToolUse hook should track session health and nudge compact."""
 
     def test_compact_nudge_at_150(self, config, capsys):
-        from cc_sentinel.core import run_post_tool_use, _init_live_state, _load_live_state, _save_live_state
+        from cc_retrospect.core import run_post_tool_use, _init_live_state, _load_live_state, _save_live_state
         _init_live_state(config)
         # Fast-forward to 149 messages
         live = _load_live_state(config)
         live["message_count"] = 149
         _save_live_state(config, live)
 
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Read"})
         out = capsys.readouterr().out
         assert "compact" in out.lower() or "150" in out
 
     def test_no_nudge_before_150(self, config, capsys):
-        from cc_sentinel.core import run_post_tool_use, _init_live_state
+        from cc_retrospect.core import run_post_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Read"})
         out = capsys.readouterr().out
         assert out == ""
 
     def test_subagent_warning(self, config, capsys):
-        from cc_sentinel.core import run_post_tool_use, _init_live_state, _load_live_state, _save_live_state
+        from cc_retrospect.core import run_post_tool_use, _init_live_state, _load_live_state, _save_live_state
         _init_live_state(config)
         live = _load_live_state(config)
         live["subagent_count"] = 9  # one below threshold
         _save_live_state(config, live)
 
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Agent"})
         out = capsys.readouterr().out
         assert "subagent" in out.lower() or "agent" in out.lower()
 
     def test_tracks_tool_count(self, config):
-        from cc_sentinel.core import run_post_tool_use, _init_live_state, _load_live_state
+        from cc_retrospect.core import run_post_tool_use, _init_live_state, _load_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Read"})
             run_post_tool_use({"tool_name": "Edit"})
             run_post_tool_use({"tool_name": "Bash"})
@@ -135,7 +134,7 @@ class TestEnhancedSessionStart:
     """SessionStart should inject last-session summary + tips."""
 
     def test_injects_last_session_summary(self, config, capsys):
-        from cc_sentinel.core import run_session_start_hook
+        from cc_retrospect.core import run_session_start_hook
         config.hints.session_start = True
         state = {
             "last_session_cost": 87.30,
@@ -145,22 +144,22 @@ class TestEnhancedSessionStart:
             "last_subagent_count": 2,
         }
         (config.data_dir / "state.json").write_text(json.dumps(state))
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
-        assert "cc-sentinel" in out
+        assert "cc-retrospect" in out
         assert "192" in out or "3h" in out  # duration
         assert "87" in out  # cost
 
     def test_no_output_when_no_state(self, config, capsys):
-        from cc_sentinel.core import run_session_start_hook
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        from cc_retrospect.core import run_session_start_hook
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
         assert out == ""
 
     def test_tips_for_long_expensive_session(self, config, capsys):
-        from cc_sentinel.core import run_session_start_hook
+        from cc_retrospect.core import run_session_start_hook
         config.hints.session_start = True
         state = {
             "last_session_cost": 250.0,
@@ -170,7 +169,7 @@ class TestEnhancedSessionStart:
             "last_subagent_count": 15,
         }
         (config.data_dir / "state.json").write_text(json.dumps(state))
-        with patch("cc_sentinel.core.load_config", return_value=config):
+        with patch("cc_retrospect.core.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
         # Should mention: duration, cost, frustration, subagents

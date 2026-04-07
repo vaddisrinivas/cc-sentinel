@@ -1,4 +1,4 @@
-"""cc-sentinel core — all business logic for Claude Code session analysis.
+"""cc-retrospect core — all business logic for Claude Code session analysis.
 
 Pure Python 3.10+, stdlib only. Extensible analyzer protocol.
 """
@@ -17,16 +17,16 @@ from typing import Iterator, Protocol, runtime_checkable
 from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
-# Logger — writes to stderr, level controlled by CC_SENTINEL_LOG_LEVEL
+# Logger — writes to stderr, level controlled by CC_RETROSPECT_LOG_LEVEL
 # ---------------------------------------------------------------------------
 
 def _make_logger() -> logging.Logger:
-    log = logging.getLogger("cc_sentinel")
+    log = logging.getLogger("cc_retrospect")
     if not log.handlers:
         handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(logging.Formatter("[cc-sentinel] %(levelname)s %(message)s"))
+        handler.setFormatter(logging.Formatter("[cc-retrospect] %(levelname)s %(message)s"))
         log.addHandler(handler)
-    level_name = os.environ.get("CC_SENTINEL_LOG_LEVEL", "WARNING").upper()
+    level_name = os.environ.get("CC_RETROSPECT_LOG_LEVEL", "WARNING").upper()
     log.setLevel(getattr(logging, level_name, logging.WARNING))
     return log
 
@@ -88,7 +88,7 @@ class Config:
     pricing: ModelPricing = field(default_factory=ModelPricing)
     thresholds: ThresholdsConfig = field(default_factory=ThresholdsConfig)
     hints: HintsConfig = field(default_factory=HintsConfig)
-    data_dir: Path = field(default_factory=lambda: Path.home() / ".cc-sentinel")
+    data_dir: Path = field(default_factory=lambda: Path.home() / ".cc-retrospect")
     claude_dir: Path = field(default_factory=lambda: Path.home() / ".claude")
 
 
@@ -363,8 +363,6 @@ def analyze_session(jsonl_path: Path, project: str, config: Config) -> SessionSu
     prev_tool: str | None = None
     chain_length = 0
     chain_records: list[tuple[str, int]] = []
-    threshold = config.thresholds.tool_chain_threshold
-
     keywords = [k.lower() for k in config.thresholds.frustration_keywords]
 
     for entry in iter_jsonl(jsonl_path):
@@ -666,7 +664,7 @@ class CostAnalyzer:
             if savings > 10:
                 recs.append(Recommendation(
                     severity="warning",
-                    description=f"If all Opus usage switched to Sonnet, estimated savings",
+                    description="If all Opus usage switched to Sonnet, estimated savings",
                     estimated_savings=_fmt_cost(savings),
                 ))
 
@@ -870,7 +868,6 @@ class WasteAnalyzer:
                     all_chains[tool].append(length)
 
         for tool, lengths in sorted(all_chains.items(), key=lambda x: sum(x[1]), reverse=True):
-            total_in_chains = sum(lengths)
             recs.append(Recommendation(
                 severity="info",
                 description=f"{len(lengths)} consecutive {tool} chains (longest: {max(lengths)}). Combine related calls or use scripts.",
@@ -1112,60 +1109,61 @@ def load_all_sessions(config: Config, project_filter: str | None = None) -> list
 # Command entry points (called from scripts/)
 # ---------------------------------------------------------------------------
 
-def run_cost(payload: dict) -> int:
-    config = load_config()
+def run_cost(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = CostAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_habits(payload: dict) -> int:
-    config = load_config()
+def run_habits(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = HabitsAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_health(payload: dict) -> int:
-    config = load_config()
+def run_health(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = HealthAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_tips(payload: dict) -> int:
-    config = load_config()
+def run_tips(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = TipsAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_waste(payload: dict) -> int:
-    config = load_config()
+def run_waste(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = WasteAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_compare(payload: dict) -> int:
-    config = load_config()
+def run_compare(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = CompareAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_report(payload: dict) -> int:
-    config = load_config()
+def run_report(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     analyzers = [CostAnalyzer(), HabitsAnalyzer(), HealthAnalyzer(), WasteAnalyzer(), TipsAnalyzer(), CompareAnalyzer()]
 
-    parts: list[str] = [f"# cc-sentinel Report\n\nGenerated: {datetime.now().isoformat()}\n"]
+    now = datetime.now()
+    parts: list[str] = [f"# cc-retrospect Report\n\nGenerated: {now.isoformat()}\n"]
     for a in analyzers:
         result = a.analyze(sessions, config)
         parts.append(result.render_markdown())
@@ -1174,7 +1172,7 @@ def run_report(payload: dict) -> int:
 
     reports_dir = config.data_dir / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
-    report_path = reports_dir / f"report-{datetime.now().strftime('%Y-%m-%d')}.md"
+    report_path = reports_dir / f"report-{now.strftime('%Y-%m-%dT%H-%M-%S')}.md"
     report_path.write_text(report, encoding="utf-8")
     print(f"Report saved to {report_path}")
     print()
@@ -1182,19 +1180,18 @@ def run_report(payload: dict) -> int:
     return 0
 
 
-def run_hints(payload: dict) -> int:
+def run_hints(payload: dict, config: Config | None = None) -> int:
     """Show and configure which inline hints are enabled."""
-    config = load_config()
-    config_path = config.data_dir / "config.env"
+    config = config or load_config()
 
     lines = [
-        "## cc-sentinel Hint Settings",
+        "## cc-retrospect Hint Settings",
         "",
         f"  session_start   {'on ' if config.hints.session_start else 'off'}  — last-session summary shown at session start  (HINTS_SESSION_START)",
         f"  pre_tool        {'on ' if config.hints.pre_tool else 'off'}  — inline hints before tool calls                (HINTS_PRE_TOOL)",
         f"  post_tool       {'on ' if config.hints.post_tool else 'off'}  — compaction nudge + subagent warnings          (HINTS_POST_TOOL)",
         "",
-        "To change, add to ~/.cc-sentinel/config.env:",
+        "To change, add to ~/.cc-retrospect/config.env:",
         "  HINTS_SESSION_START=true",
         "  HINTS_PRE_TOOL=true",
         "  HINTS_POST_TOOL=true",
@@ -1207,9 +1204,9 @@ def run_hints(payload: dict) -> int:
 # Hook entry points
 # ---------------------------------------------------------------------------
 
-def run_stop_hook(payload: dict) -> int:
+def run_stop_hook(payload: dict, config: Config | None = None) -> int:
     """Stop hook: analyze current session and append summary to sessions.jsonl."""
-    config = load_config()
+    config = config or load_config()
     session_id = payload.get("session_id", "")
     cwd = payload.get("cwd", "")
 
@@ -1217,7 +1214,6 @@ def run_stop_hook(payload: dict) -> int:
         return 0
 
     # Derive project directory name
-    home = str(Path.home())
     proj_dir_name = cwd.replace("/", "-")
     if proj_dir_name.startswith("-"):
         pass  # already in the right format
@@ -1265,9 +1261,9 @@ def run_stop_hook(payload: dict) -> int:
     return 0
 
 
-def run_session_start_hook(payload: dict) -> int:
+def run_session_start_hook(payload: dict, config: Config | None = None) -> int:
     """SessionStart hook: inject last-session summary + report highlights + tips."""
-    config = load_config()
+    config = config or load_config()
     cwd = payload.get("cwd", "")
     if not cwd:
         return 0
@@ -1350,7 +1346,7 @@ def run_session_start_hook(payload: dict) -> int:
                 logger.debug("Could not read last report for session start hints: %s", e)
 
     if lines and config.hints.session_start:
-        print("[cc-sentinel] " + " ".join(lines))
+        print("[cc-retrospect] " + " ".join(lines))
 
     # Initialize live session state for PostToolUse tracking
     _init_live_state(config)
@@ -1406,9 +1402,9 @@ def _save_live_state(config: Config, state: dict) -> None:
 # PreToolUse hook — real-time waste interception
 # ---------------------------------------------------------------------------
 
-def run_pre_tool_use(payload: dict) -> int:
+def run_pre_tool_use(payload: dict, config: Config | None = None) -> int:
     """Intercept tool calls BEFORE they execute. Print hints to stderr (non-blocking)."""
-    config = load_config()
+    config = config or load_config()
     tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input", {})
 
@@ -1458,7 +1454,7 @@ def run_pre_tool_use(payload: dict) -> int:
 
     if hints and config.hints.pre_tool:
         for hint in hints:
-            print(f"[cc-sentinel] {hint}")
+            print(f"[cc-retrospect] {hint}")
 
     return 0
 
@@ -1467,9 +1463,9 @@ def run_pre_tool_use(payload: dict) -> int:
 # PostToolUse hook — live session health tracking + auto-compact nudge
 # ---------------------------------------------------------------------------
 
-def run_post_tool_use(payload: dict) -> int:
+def run_post_tool_use(payload: dict, config: Config | None = None) -> int:
     """Track session health after each tool call. Nudge compact when needed."""
-    config = load_config()
+    config = config or load_config()
     live = _load_live_state(config)
 
     live["tool_count"] = live.get("tool_count", 0) + 1
@@ -1510,6 +1506,6 @@ def run_post_tool_use(payload: dict) -> int:
 
     if hints and config.hints.post_tool:
         for hint in hints:
-            print(f"[cc-sentinel] {hint}")
+            print(f"[cc-retrospect] {hint}")
 
     return 0

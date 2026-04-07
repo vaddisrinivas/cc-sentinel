@@ -3,7 +3,7 @@ name: analyze
 description: Analyze Claude Code session data for costs, habits, health issues, and waste.
 ---
 
-# cc-sentinel
+# cc-retrospect
 
 Analyze your Claude Code usage to understand costs, detect waste, and improve your workflow.
 
@@ -11,17 +11,17 @@ Analyze your Claude Code usage to understand costs, detect waste, and improve yo
 
 | Command | What it does |
 |---|---|
-| `/cc-sentinel:cost` | Cost breakdown by project, model, time period. What-if scenarios (Sonnet vs Opus). |
-| `/cc-sentinel:habits` | Session lengths, peak hours, tool usage, frustration signals, prompt patterns. |
-| `/cc-sentinel:health` | Health checks: long sessions, subagent overuse, config issues, cost velocity. |
-| `/cc-sentinel:tips` | 1-3 actionable tips based on your recent session patterns. |
-| `/cc-sentinel:report` | Full markdown report saved to `~/.cc-sentinel/reports/`. |
-| `/cc-sentinel:compare` | This week vs last week comparison. |
-| `/cc-sentinel:waste` | Detect wasted tokens: WebFetch to GitHub, tool chains, mega prompts, model mismatch. |
+| `/cc-retrospect:cost` | Cost breakdown by project, model, time period. What-if scenarios (Sonnet vs Opus). |
+| `/cc-retrospect:habits` | Session lengths, peak hours, tool usage, frustration signals, prompt patterns. |
+| `/cc-retrospect:health` | Health checks: long sessions, subagent overuse, config issues, cost velocity. |
+| `/cc-retrospect:tips` | 1-3 actionable tips based on your recent session patterns. |
+| `/cc-retrospect:report` | Full markdown report saved to `~/.cc-retrospect/reports/`. |
+| `/cc-retrospect:compare` | This week vs last week comparison. |
+| `/cc-retrospect:waste` | Detect wasted tokens: WebFetch to GitHub, tool chains, mega prompts, model mismatch. |
 
 ## How it works
 
-- **Stop hook**: After each session, computes and caches a session summary to `~/.cc-sentinel/sessions.jsonl`
+- **Stop hook**: After each session, computes and caches a session summary to `~/.cc-retrospect/sessions.jsonl`
 - **SessionStart hook**: Injects a brief summary of your last session (cost, duration, subagents) — only shown when starting a session in the same project folder
 - **First run**: Scans all historical JSONL files (may take 10-30s) and builds the cache
 - **Subsequent runs**: Reads from cache, only analyzes new sessions
@@ -32,7 +32,7 @@ All data is read locally from `~/.claude/projects/`. No network calls, no teleme
 
 ## Configuration
 
-Create `~/.cc-sentinel/config.env` to override defaults:
+Create `~/.cc-retrospect/config.env` to override defaults:
 
 ```env
 # Override pricing ($/MTok)
@@ -50,7 +50,7 @@ WASTE_WEBFETCH_DOMAINS=github.com,api.github.com,stackoverflow.com
 
 ## Custom analyzers
 
-Drop a `.py` file in `~/.cc-sentinel/analyzers/` implementing the Analyzer protocol:
+Drop a `.py` file in `~/.cc-retrospect/analyzers/` implementing the Analyzer protocol:
 
 ```python
 class MyAnalyzer:
@@ -63,4 +63,4 @@ class MyAnalyzer:
         ...
 ```
 
-It will be auto-discovered and included in `/cc-sentinel:report`.
+It will be auto-discovered and included in `/cc-retrospect:report`.
