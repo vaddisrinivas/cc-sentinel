@@ -1112,60 +1112,61 @@ def load_all_sessions(config: Config, project_filter: str | None = None) -> list
 # Command entry points (called from scripts/)
 # ---------------------------------------------------------------------------
 
-def run_cost(payload: dict) -> int:
-    config = load_config()
+def run_cost(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = CostAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_habits(payload: dict) -> int:
-    config = load_config()
+def run_habits(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = HabitsAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_health(payload: dict) -> int:
-    config = load_config()
+def run_health(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = HealthAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_tips(payload: dict) -> int:
-    config = load_config()
+def run_tips(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = TipsAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_waste(payload: dict) -> int:
-    config = load_config()
+def run_waste(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = WasteAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_compare(payload: dict) -> int:
-    config = load_config()
+def run_compare(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     result = CompareAnalyzer().analyze(sessions, config)
     print(result.render_text())
     return 0
 
 
-def run_report(payload: dict) -> int:
-    config = load_config()
+def run_report(payload: dict, config: Config | None = None) -> int:
+    config = config or load_config()
     sessions = load_all_sessions(config)
     analyzers = [CostAnalyzer(), HabitsAnalyzer(), HealthAnalyzer(), WasteAnalyzer(), TipsAnalyzer(), CompareAnalyzer()]
 
-    parts: list[str] = [f"# cc-sentinel Report\n\nGenerated: {datetime.now().isoformat()}\n"]
+    now = datetime.now()
+    parts: list[str] = [f"# cc-sentinel Report\n\nGenerated: {now.isoformat()}\n"]
     for a in analyzers:
         result = a.analyze(sessions, config)
         parts.append(result.render_markdown())
@@ -1174,7 +1175,7 @@ def run_report(payload: dict) -> int:
 
     reports_dir = config.data_dir / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
-    report_path = reports_dir / f"report-{datetime.now().strftime('%Y-%m-%d')}.md"
+    report_path = reports_dir / f"report-{now.strftime('%Y-%m-%dT%H-%M-%S')}.md"
     report_path.write_text(report, encoding="utf-8")
     print(f"Report saved to {report_path}")
     print()
@@ -1182,9 +1183,9 @@ def run_report(payload: dict) -> int:
     return 0
 
 
-def run_hints(payload: dict) -> int:
+def run_hints(payload: dict, config: Config | None = None) -> int:
     """Show and configure which inline hints are enabled."""
-    config = load_config()
+    config = config or load_config()
     config_path = config.data_dir / "config.env"
 
     lines = [
@@ -1207,9 +1208,9 @@ def run_hints(payload: dict) -> int:
 # Hook entry points
 # ---------------------------------------------------------------------------
 
-def run_stop_hook(payload: dict) -> int:
+def run_stop_hook(payload: dict, config: Config | None = None) -> int:
     """Stop hook: analyze current session and append summary to sessions.jsonl."""
-    config = load_config()
+    config = config or load_config()
     session_id = payload.get("session_id", "")
     cwd = payload.get("cwd", "")
 
@@ -1265,9 +1266,9 @@ def run_stop_hook(payload: dict) -> int:
     return 0
 
 
-def run_session_start_hook(payload: dict) -> int:
+def run_session_start_hook(payload: dict, config: Config | None = None) -> int:
     """SessionStart hook: inject last-session summary + report highlights + tips."""
-    config = load_config()
+    config = config or load_config()
     cwd = payload.get("cwd", "")
     if not cwd:
         return 0
@@ -1406,9 +1407,9 @@ def _save_live_state(config: Config, state: dict) -> None:
 # PreToolUse hook — real-time waste interception
 # ---------------------------------------------------------------------------
 
-def run_pre_tool_use(payload: dict) -> int:
+def run_pre_tool_use(payload: dict, config: Config | None = None) -> int:
     """Intercept tool calls BEFORE they execute. Print hints to stderr (non-blocking)."""
-    config = load_config()
+    config = config or load_config()
     tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input", {})
 
@@ -1467,9 +1468,9 @@ def run_pre_tool_use(payload: dict) -> int:
 # PostToolUse hook — live session health tracking + auto-compact nudge
 # ---------------------------------------------------------------------------
 
-def run_post_tool_use(payload: dict) -> int:
+def run_post_tool_use(payload: dict, config: Config | None = None) -> int:
     """Track session health after each tool call. Nudge compact when needed."""
-    config = load_config()
+    config = config or load_config()
     live = _load_live_state(config)
 
     live["tool_count"] = live.get("tool_count", 0) + 1

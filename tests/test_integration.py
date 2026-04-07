@@ -111,9 +111,8 @@ class TestStopHookPipeline:
         session_id = "integ-stop-001"
         self._setup_session(claude_dir, session_id)
 
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_stop_hook
-            rc = run_stop_hook({"session_id": session_id, "cwd": "/test/myapp"})
+        from cc_sentinel.core import run_stop_hook
+        rc = run_stop_hook({"session_id": session_id, "cwd": "/test/myapp"}, config=config)
 
         assert rc == 0
         cache_path = data_dir / "sessions.jsonl"
@@ -128,9 +127,8 @@ class TestStopHookPipeline:
         session_id = "integ-stop-002"
         self._setup_session(claude_dir, session_id)
 
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_stop_hook
-            run_stop_hook({"session_id": session_id, "cwd": "/test/myapp"})
+        from cc_sentinel.core import run_stop_hook
+        run_stop_hook({"session_id": session_id, "cwd": "/test/myapp"}, config=config)
 
         state_path = data_dir / "state.json"
         assert state_path.exists(), "state.json should be created"
@@ -141,17 +139,15 @@ class TestStopHookPipeline:
 
     def test_stop_hook_ignores_missing_session_id(self, tmp_env):
         claude_dir, data_dir, config = tmp_env
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_stop_hook
-            rc = run_stop_hook({"cwd": "/test/myapp"})  # no session_id
+        from cc_sentinel.core import run_stop_hook
+        rc = run_stop_hook({"cwd": "/test/myapp"}, config=config)  # no session_id
         assert rc == 0
         assert not (data_dir / "sessions.jsonl").exists()
 
     def test_stop_hook_ignores_nonexistent_session_file(self, tmp_env):
         claude_dir, data_dir, config = tmp_env
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_stop_hook
-            rc = run_stop_hook({"session_id": "ghost-session-999", "cwd": "/test/myapp"})
+        from cc_sentinel.core import run_stop_hook
+        rc = run_stop_hook({"session_id": "ghost-session-999", "cwd": "/test/myapp"}, config=config)
         assert rc == 0
         assert not (data_dir / "sessions.jsonl").exists()
 
@@ -164,9 +160,8 @@ class TestStopHookPipeline:
         existing_state = {"custom_key": "should_survive", "old_cost": 5.0}
         (data_dir / "state.json").write_text(json.dumps(existing_state))
 
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_stop_hook
-            run_stop_hook({"session_id": session_id, "cwd": "/test/myapp"})
+        from cc_sentinel.core import run_stop_hook
+        run_stop_hook({"session_id": session_id, "cwd": "/test/myapp"}, config=config)
 
         state = json.loads((data_dir / "state.json").read_text())
         assert state.get("custom_key") == "should_survive"
@@ -317,9 +312,8 @@ class TestReportGeneration:
     def test_report_file_is_created(self, tmp_env, capsys):
         claude_dir, data_dir, config = tmp_env
         self._populate(claude_dir)
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_report
-            rc = run_report({})
+        from cc_sentinel.core import run_report
+        rc = run_report({}, config=config)
         assert rc == 0
         reports = list((data_dir / "reports").glob("report-*.md"))
         assert len(reports) == 1
@@ -327,9 +321,8 @@ class TestReportGeneration:
     def test_report_contains_all_sections(self, tmp_env, capsys):
         claude_dir, data_dir, config = tmp_env
         self._populate(claude_dir)
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_report
-            run_report({})
+        from cc_sentinel.core import run_report
+        run_report({}, config=config)
         report_path = sorted((data_dir / "reports").glob("report-*.md"))[0]
         content = report_path.read_text()
         for section in ["Cost", "Habits", "Health", "Waste", "Tips", "Week"]:
@@ -338,9 +331,8 @@ class TestReportGeneration:
     def test_report_is_valid_markdown(self, tmp_env, capsys):
         claude_dir, data_dir, config = tmp_env
         self._populate(claude_dir)
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_report
-            run_report({})
+        from cc_sentinel.core import run_report
+        run_report({}, config=config)
         report_path = sorted((data_dir / "reports").glob("report-*.md"))[0]
         content = report_path.read_text()
         assert content.startswith("# cc-sentinel Report")
@@ -425,11 +417,10 @@ class TestFullSessionLifecycle:
             _init_live_state, _load_live_state,
             run_pre_tool_use, run_post_tool_use,
         )
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            _init_live_state(config)
-            run_post_tool_use({"tool_name": "Read"})
-            run_post_tool_use({"tool_name": "Edit"})
-            run_post_tool_use({"tool_name": "Bash"})
+        _init_live_state(config)
+        run_post_tool_use({"tool_name": "Read"}, config=config)
+        run_post_tool_use({"tool_name": "Edit"}, config=config)
+        run_post_tool_use({"tool_name": "Bash"}, config=config)
 
         live = _load_live_state(config)
         assert live["tool_count"] == 3
@@ -438,10 +429,9 @@ class TestFullSessionLifecycle:
     def test_lifecycle_subagent_tracking(self, tmp_env):
         claude_dir, data_dir, config = tmp_env
         from cc_sentinel.core import _init_live_state, _load_live_state, run_post_tool_use
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            _init_live_state(config)
-            for _ in range(5):
-                run_post_tool_use({"tool_name": "Agent"})
+        _init_live_state(config)
+        for _ in range(5):
+            run_post_tool_use({"tool_name": "Agent"}, config=config)
 
         live = _load_live_state(config)
         assert live["subagent_count"] == 5
@@ -458,11 +448,10 @@ class TestFullSessionLifecycle:
         _write_session(claude_dir / "projects", "-lifecycle-proj", session_id, lines)
 
         from cc_sentinel.core import _init_live_state, run_post_tool_use, run_stop_hook
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            _init_live_state(config)
-            run_post_tool_use({"tool_name": "Read"})
-            run_post_tool_use({"tool_name": "Bash"})
-            run_stop_hook({"session_id": session_id, "cwd": "/lifecycle/proj"})
+        _init_live_state(config)
+        run_post_tool_use({"tool_name": "Read"}, config=config)
+        run_post_tool_use({"tool_name": "Bash"}, config=config)
+        run_stop_hook({"session_id": session_id, "cwd": "/lifecycle/proj"}, config=config)
 
         assert (data_dir / "sessions.jsonl").exists()
         assert (data_dir / "state.json").exists()
@@ -482,9 +471,8 @@ class TestFullSessionLifecycle:
         }
         (data_dir / "state.json").write_text(json.dumps(state))
 
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_session_start_hook
-            run_session_start_hook({"cwd": "/test/myapp"})
+        from cc_sentinel.core import run_session_start_hook
+        run_session_start_hook({"cwd": "/test/myapp"}, config=config)
 
         out = capsys.readouterr().out
         assert "cc-sentinel" in out
@@ -498,9 +486,8 @@ class TestFullSessionLifecycle:
         state = {"last_session_cost": 100.0, "last_session_duration_minutes": 90, "last_project": ""}
         (data_dir / "state.json").write_text(json.dumps(state))
 
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            from cc_sentinel.core import run_session_start_hook
-            run_session_start_hook({"cwd": "/any/path"})
+        from cc_sentinel.core import run_session_start_hook
+        run_session_start_hook({"cwd": "/any/path"}, config=config)
 
         out = capsys.readouterr().out
         assert out == ""
@@ -784,11 +771,10 @@ class TestPreToolHintsIntegration:
         claude_dir, data_dir, config = tmp_env
         from cc_sentinel.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            run_pre_tool_use({
-                "tool_name": "WebFetch",
-                "tool_input": {"url": "https://api.github.com/repos/org/repo"},
-            })
+        run_pre_tool_use({
+            "tool_name": "WebFetch",
+            "tool_input": {"url": "https://api.github.com/repos/org/repo"},
+        }, config=config)
         out = capsys.readouterr().out
         assert "gh" in out.lower() or "github" in out.lower()
 
@@ -797,11 +783,10 @@ class TestPreToolHintsIntegration:
         config.hints.pre_tool = False
         from cc_sentinel.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            run_pre_tool_use({
-                "tool_name": "WebFetch",
-                "tool_input": {"url": "https://github.com/org/repo"},
-            })
+        run_pre_tool_use({
+            "tool_name": "WebFetch",
+            "tool_input": {"url": "https://github.com/org/repo"},
+        }, config=config)
         out = capsys.readouterr().out
         assert out == ""
 
@@ -809,11 +794,10 @@ class TestPreToolHintsIntegration:
         claude_dir, data_dir, config = tmp_env
         from cc_sentinel.core import run_pre_tool_use, _init_live_state, _load_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            for _ in range(5):
-                run_pre_tool_use({"tool_name": "Bash", "tool_input": {"command": "ls"}})
-            # Now a different tool — chain should reset
-            run_pre_tool_use({"tool_name": "Read", "tool_input": {}})
+        for _ in range(5):
+            run_pre_tool_use({"tool_name": "Bash", "tool_input": {"command": "ls"}}, config=config)
+        # Now a different tool — chain should reset
+        run_pre_tool_use({"tool_name": "Read", "tool_input": {}}, config=config)
 
         live = _load_live_state(config)
         assert live["chain_length"] == 1
@@ -823,10 +807,9 @@ class TestPreToolHintsIntegration:
         claude_dir, data_dir, config = tmp_env
         from cc_sentinel.core import run_post_tool_use, _init_live_state, _load_live_state
         _init_live_state(config)
-        with patch("cc_sentinel.core.load_config", return_value=config):
-            run_post_tool_use({
-                "tool_name": "WebFetch",
-                "tool_input": {"url": "https://github.com/org/repo/issues/1"},
-            })
+        run_post_tool_use({
+            "tool_name": "WebFetch",
+            "tool_input": {"url": "https://github.com/org/repo/issues/1"},
+        }, config=config)
         live = _load_live_state(config)
         assert live["webfetch_github_count"] == 1
