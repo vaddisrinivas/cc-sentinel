@@ -5,6 +5,7 @@ Pure Python 3.10+, stdlib only. Extensible analyzer protocol.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
@@ -14,6 +15,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator, Protocol, runtime_checkable
 from urllib.parse import urlparse
+
+# ---------------------------------------------------------------------------
+# Logger — writes to stderr, level controlled by CC_SENTINEL_LOG_LEVEL
+# ---------------------------------------------------------------------------
+
+def _make_logger() -> logging.Logger:
+    log = logging.getLogger("cc_sentinel")
+    if not log.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("[cc-sentinel] %(levelname)s %(message)s"))
+        log.addHandler(handler)
+    level_name = os.environ.get("CC_SENTINEL_LOG_LEVEL", "WARNING").upper()
+    log.setLevel(getattr(logging, level_name, logging.WARNING))
+    return log
+
+logger = _make_logger()
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -60,9 +77,17 @@ class ThresholdsConfig:
 
 
 @dataclass
+class HintsConfig:
+    session_start: bool = False   # Show last-session summary on new session (default: off)
+    pre_tool: bool = True         # Inline hints before tool calls (WebFetch/Bash chains)
+    post_tool: bool = True        # Post-tool hints: compact nudge, subagent warnings
+
+
+@dataclass
 class Config:
     pricing: ModelPricing = field(default_factory=ModelPricing)
     thresholds: ThresholdsConfig = field(default_factory=ThresholdsConfig)
+    hints: HintsConfig = field(default_factory=HintsConfig)
     data_dir: Path = field(default_factory=lambda: Path.home() / ".cc-sentinel")
     claude_dir: Path = field(default_factory=lambda: Path.home() / ".claude")
 
@@ -122,8 +147,14 @@ def _apply_config(cfg: Config, key: str, val: str) -> None:
             cfg.thresholds.daily_cost_warning = float(val)
         elif key == "WASTE_WEBFETCH_DOMAINS":
             cfg.thresholds.waste_webfetch_domains = [d.strip() for d in val.split(",") if d.strip()]
-    except (ValueError, TypeError):
-        pass
+        elif key == "HINTS_SESSION_START":
+            cfg.hints.session_start = val.lower() in ("1", "true", "yes")
+        elif key == "HINTS_PRE_TOOL":
+            cfg.hints.pre_tool = val.lower() not in ("0", "false", "no")
+        elif key == "HINTS_POST_TOOL":
+            cfg.hints.post_tool = val.lower() not in ("0", "false", "no")
+    except (ValueError, TypeError) as e:
+        logger.debug("Ignoring bad config value %s=%r: %s", key, val, e)
 
 
 # ---------------------------------------------------------------------------
@@ -142,9 +173,11 @@ def iter_jsonl(path: Path) -> Iterator[dict]:
                     continue
                 try:
                     yield json.loads(line)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    logger.debug("Skipping malformed JSONL line in %s: %s", path, e)
                     continue
-    except OSError:
+    except OSError as e:
+        logger.debug("Cannot read %s: %s", path, e)
         return
 
 
@@ -413,8 +446,8 @@ def analyze_session(jsonl_path: Path, project: str, config: Config) -> SessionSu
                                         domain = urlparse(url).netloc
                                         if domain:
                                             webfetch_domains[domain] += 1
-                                    except Exception:
-                                        pass
+                                    except Exception as e:
+                                        logger.debug("urlparse failed for WebFetch URL: %s", e)
 
                         # Tool chain tracking
                         if tool_name == prev_tool:
@@ -436,8 +469,8 @@ def analyze_session(jsonl_path: Path, project: str, config: Config) -> SessionSu
             t1 = datetime.fromisoformat(first_ts.replace("Z", "+00:00"))
             t2 = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
             duration = max(0, (t2 - t1).total_seconds() / 60)
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as e:
+            logger.debug("Could not parse duration timestamps in %s: %s", jsonl_path, e)
 
     return SessionSummary(
         session_id=session_id or jsonl_path.stem,
@@ -664,8 +697,8 @@ class HabitsAnalyzer:
                     dt = datetime.fromisoformat(s.start_ts.replace("Z", "+00:00"))
                     hour_counts[dt.hour] += 1
                     dow_counts[dt.strftime("%A")] += 1
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as e:
+                    logger.debug("Could not parse session timestamp %r: %s", s.start_ts, e)
 
         peak_hours = sorted(hour_counts.items(), key=lambda x: x[1], reverse=True)[:3]
         peak_days = sorted(dow_counts.items(), key=lambda x: x[1], reverse=True)[:3]
@@ -1022,7 +1055,8 @@ def get_analyzers(config: Config) -> list[Analyzer]:
                             and hasattr(attr, "description")
                             and hasattr(attr, "analyze")):
                             analyzers.append(attr())
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to load custom analyzer from %s: %s", py_file, e)
                 continue
 
     return analyzers
@@ -1043,7 +1077,8 @@ def load_all_sessions(config: Config, project_filter: str | None = None) -> list
             try:
                 s = session_summary_from_dict(entry)
                 cached[s.session_id] = s
-            except (TypeError, KeyError):
+            except (TypeError, KeyError) as e:
+                logger.debug("Skipping malformed cache entry: %s", e)
                 continue
 
     sessions: list[SessionSummary] = []
@@ -1147,6 +1182,27 @@ def run_report(payload: dict) -> int:
     return 0
 
 
+def run_hints(payload: dict) -> int:
+    """Show and configure which inline hints are enabled."""
+    config = load_config()
+    config_path = config.data_dir / "config.env"
+
+    lines = [
+        "## cc-sentinel Hint Settings",
+        "",
+        f"  session_start   {'on ' if config.hints.session_start else 'off'}  — last-session summary shown at session start  (HINTS_SESSION_START)",
+        f"  pre_tool        {'on ' if config.hints.pre_tool else 'off'}  — inline hints before tool calls                (HINTS_PRE_TOOL)",
+        f"  post_tool       {'on ' if config.hints.post_tool else 'off'}  — compaction nudge + subagent warnings          (HINTS_POST_TOOL)",
+        "",
+        "To change, add to ~/.cc-sentinel/config.env:",
+        "  HINTS_SESSION_START=true",
+        "  HINTS_PRE_TOOL=true",
+        "  HINTS_POST_TOOL=true",
+    ]
+    print("\n".join(lines))
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Hook entry points
 # ---------------------------------------------------------------------------
@@ -1193,8 +1249,8 @@ def run_stop_hook(payload: dict) -> int:
     if state_path.exists():
         try:
             state = json.loads(state_path.read_text())
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.warning("Could not parse state.json: %s", e)
 
     state["last_session_id"] = summary.session_id
     state["last_project"] = summary.project
@@ -1222,7 +1278,8 @@ def run_session_start_hook(payload: dict) -> int:
 
     try:
         state = json.loads(state_path.read_text())
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Could not read state for session start hook: %s", e)
         return 0
 
     # Only show last-session summary if it's from the same project.
@@ -1289,10 +1346,10 @@ def run_session_start_hook(payload: dict) -> int:
                         break
                 if waste_tips:
                     lines.append("Top waste: " + "; ".join(waste_tips))
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug("Could not read last report for session start hints: %s", e)
 
-    if lines:
+    if lines and config.hints.session_start:
         print("[cc-sentinel] " + " ".join(lines))
 
     # Initialize live session state for PostToolUse tracking
@@ -1331,8 +1388,8 @@ def _load_live_state(config: Config) -> dict:
     if path.exists():
         try:
             return json.loads(path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug("Could not read live session state: %s", e)
     return {"message_count": 0, "tool_count": 0, "cost_estimate": 0.0,
             "prev_tool": "", "chain_length": 0, "webfetch_github_count": 0,
             "subagent_count": 0, "bash_chain_warned": False, "compact_nudged": False}
@@ -1341,8 +1398,8 @@ def _load_live_state(config: Config) -> dict:
 def _save_live_state(config: Config, state: dict) -> None:
     try:
         _live_state_path(config).write_text(json.dumps(state))
-    except OSError:
-        pass
+    except OSError as e:
+        logger.debug("Could not write live session state: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -1368,8 +1425,8 @@ def run_pre_tool_use(payload: dict) -> int:
                 domain = urlparse(url).netloc
                 if any(wd in domain for wd in config.thresholds.waste_webfetch_domains):
                     hints.append(f"Consider using `gh` CLI instead of WebFetch for {domain} — structured output, fewer tokens.")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("urlparse failed for WebFetch URL in pre_tool_use: %s", e)
 
     # Agent spawn → check if simple lookup
     if tool_name == "Agent":
@@ -1399,8 +1456,7 @@ def run_pre_tool_use(payload: dict) -> int:
     live["prev_tool"] = tool_name
     _save_live_state(config, live)
 
-    if hints:
-        # Print to stdout — Claude Code reads hook stdout
+    if hints and config.hints.pre_tool:
         for hint in hints:
             print(f"[cc-sentinel] {hint}")
 
@@ -1452,7 +1508,7 @@ def run_post_tool_use(payload: dict) -> int:
 
     _save_live_state(config, live)
 
-    if hints:
+    if hints and config.hints.post_tool:
         for hint in hints:
             print(f"[cc-sentinel] {hint}")
 

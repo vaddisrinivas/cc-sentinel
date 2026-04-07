@@ -29,7 +29,7 @@ if str(PLUGIN_ROOT) not in sys.path:
 
 from cc_sentinel.core import (
     run_cost, run_habits, run_health, run_tips,
-    run_report, run_compare, run_waste,
+    run_report, run_compare, run_waste, run_hints,
     run_stop_hook, run_session_start_hook,
     run_pre_tool_use, run_post_tool_use,
 )
@@ -48,6 +48,7 @@ _DISPATCH = {
     "report": run_report,
     "compare": run_compare,
     "waste": run_waste,
+    "hints": run_hints,
 }
 
 _HOOKS = {"stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use"}

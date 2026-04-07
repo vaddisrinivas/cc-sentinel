@@ -136,6 +136,7 @@ class TestEnhancedSessionStart:
 
     def test_injects_last_session_summary(self, config, capsys):
         from cc_sentinel.core import run_session_start_hook
+        config.hints.session_start = True
         state = {
             "last_session_cost": 87.30,
             "last_session_duration_minutes": 192,
@@ -160,6 +161,7 @@ class TestEnhancedSessionStart:
 
     def test_tips_for_long_expensive_session(self, config, capsys):
         from cc_sentinel.core import run_session_start_hook
+        config.hints.session_start = True
         state = {
             "last_session_cost": 250.0,
             "last_session_duration_minutes": 300,
@@ -185,5 +187,5 @@ class TestDispatcher:
         import importlib
         dispatch = importlib.import_module("dispatch")
         expected = {"stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use",
-                    "cost", "habits", "health", "tips", "report", "compare", "waste"}
+                    "cost", "habits", "health", "tips", "report", "compare", "waste", "hints"}
         assert expected == set(dispatch._DISPATCH.keys())

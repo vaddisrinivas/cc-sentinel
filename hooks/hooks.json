@@ -6,7 +6,8 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py stop_hook",
-            "timeout": 15000
+            "timeout": 15000,
+            "suppressOutput": true
           }
         ]
       }
@@ -17,7 +18,8 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py session_start_hook",
-            "timeout": 5000
+            "timeout": 5000,
+            "suppressOutput": true
           }
         ]
       }
