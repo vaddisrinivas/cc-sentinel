@@ -1,5 +1,5 @@
 ---
-description: 
+description: Usage patterns — session lengths, peak hours, tool usage, frustration signals.
 ---
 
 ```bash

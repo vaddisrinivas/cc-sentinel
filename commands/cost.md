@@ -1,5 +1,5 @@
 ---
-description: 
+description: Cost breakdown by project, model, and time period with what-if scenarios.
 ---
 
 ```bash

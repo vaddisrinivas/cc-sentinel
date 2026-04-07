@@ -1,5 +1,5 @@
 ---
-description: 
+description: 1-3 actionable tips based on your most recent session patterns.
 ---
 
 ```bash

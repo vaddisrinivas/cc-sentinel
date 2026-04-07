@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "Proactive Claude Code guardian: intercepts waste in real-time, nudges compact, injects tips, tracks costs. Pure Python, extensible.",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "plugins": [
     {

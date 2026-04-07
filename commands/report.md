@@ -1,5 +1,5 @@
 ---
-description: 
+description: Full report across all analyzers, saved to ~/.cc-retrospect/reports/.
 ---
 
 ```bash

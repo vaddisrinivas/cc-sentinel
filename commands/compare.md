@@ -1,5 +1,5 @@
 ---
-description: 
+description: This week vs last week — cost, sessions, duration, frustrations, subagents.
 ---
 
 ```bash

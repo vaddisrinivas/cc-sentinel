@@ -1,66 +1,130 @@
 ---
 name: analyze
-description: Analyze Claude Code session data for costs, habits, health issues, and waste.
+description: Full Claude Code session retrospective — habits, health, tips, trends, and cost analysis. Use when the user asks about session costs, usage patterns, or wants optimization advice.
+user-invocable: true
+allowed-tools: Bash Read Grep Glob
 ---
 
 # cc-retrospect
 
-Analyze your Claude Code usage to understand costs, detect waste, and improve your workflow.
+You are running a full retrospective on the user's Claude Code sessions. Produce a structured markdown report covering cost, habits, health, waste, and recommendations.
 
-## Commands
+---
 
-| Command | What it does |
+## Step 1 — Collect data (try sources in order, stop at first success)
+
+### Source 1: Python dispatcher (most precise)
+
+Run these and use the output directly:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py cost
+```
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.py waste
+```
+
+If both succeed, skip to Step 2. If Python fails, try Source 2.
+
+### Source 2: Pre-summarized cache
+
+Read `~/.cc-retrospect/sessions.jsonl`. Each line is a JSON object with these fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `project` | string | Project directory name |
+| `start_ts` | string | ISO timestamp of session start |
+| `duration_minutes` | float | Session length in minutes |
+| `message_count` | int | Total messages |
+| `total_cost` | float | USD cost |
+| `total_input_tokens` | int | Fresh input tokens |
+| `total_output_tokens` | int | Output tokens |
+| `total_cache_read_tokens` | int | Cache-read tokens |
+| `frustration_count` | int | Frustration keyword hits |
+| `frustration_words` | object | `{word: count}` map |
+| `subagent_count` | int | Agent tool calls |
+| `tool_counts` | object | `{tool: count}` map |
+| `webfetch_domains` | object | `{domain: count}` map |
+| `model_breakdown` | object | `{model: cost}` map |
+| `tool_chains` | array | `[[tool, length], ...]` consecutive same-tool runs |
+| `mega_prompt_count` | int | User messages > 1000 chars |
+
+If this file is missing or empty, try Source 3.
+
+### Source 3: Raw Claude Code session files (always present)
+
+Glob `~/.claude/projects/**/*.jsonl`. Each file is one session. Each line is a conversation entry:
+
+- `type: "assistant"` entries have `message.usage` (token counts) and `message.model` (model name)
+- `type: "user"` entries have `message.content` (user text)
+- `message.content[].type == "tool_use"` entries have `.name` for tool name
+- `timestamp` on each entry gives timing
+
+**Pricing to compute cost:**
+
+| Model | Input $/MTok | Output $/MTok |
+|---|---|---|
+| Opus 4 | 15.00 | 75.00 |
+| Sonnet 4 | 3.00 | 15.00 |
+| Haiku 4 | 0.80 | 4.00 |
+
+**Frustration keywords:** `again`, `ugh`, `still broken`, `not working`, `wrong`, `try again`, `wtf`, `come on`, `seriously`, `nope`
+
+If raw files are also missing, tell the user: "No Claude Code session data found at `~/.claude/projects/`. Run some sessions first."
+
+---
+
+## Step 2 — Build the report
+
+Produce all sections below. Use data from whichever source succeeded.
+
+### Summary
+
+| Metric | Value |
 |---|---|
-| `/cc-retrospect:cost` | Cost breakdown by project, model, time period. What-if scenarios (Sonnet vs Opus). |
-| `/cc-retrospect:habits` | Session lengths, peak hours, tool usage, frustration signals, prompt patterns. |
-| `/cc-retrospect:health` | Health checks: long sessions, subagent overuse, config issues, cost velocity. |
-| `/cc-retrospect:tips` | 1-3 actionable tips based on your recent session patterns. |
-| `/cc-retrospect:report` | Full markdown report saved to `~/.cc-retrospect/reports/`. |
-| `/cc-retrospect:compare` | This week vs last week comparison. |
-| `/cc-retrospect:waste` | Detect wasted tokens: WebFetch to GitHub, tool chains, mega prompts, model mismatch. |
+| Total sessions | |
+| Total cost | |
+| Avg session duration | |
+| Avg messages/session | |
+| Total subagent spawns | |
+| Total frustration signals | |
 
-## How it works
+### Cost breakdown
 
-- **Stop hook**: After each session, computes and caches a session summary to `~/.cc-retrospect/sessions.jsonl`
-- **SessionStart hook**: Injects a brief summary of your last session (cost, duration, subagents) — only shown when starting a session in the same project folder
-- **First run**: Scans all historical JSONL files (may take 10-30s) and builds the cache
-- **Subsequent runs**: Reads from cache, only analyzes new sessions
+- Total cost by project (top 5) and by model
+- Daily average for last 7 days
+- If > $10 Opus spend: what-if savings if switched to Sonnet
 
-## Data sources
+### Habits
 
-All data is read locally from `~/.claude/projects/`. No network calls, no telemetry.
+- Average and longest session duration
+- Most-used tools (top 10)
+- Peak hours (from `start_ts` hour)
+- Peak days of week
 
-## Configuration
+### Health signals
 
-Create `~/.cc-retrospect/config.env` to override defaults:
+Flag any that apply:
+- Sessions > 120 min or > 200 messages
+- Any session with > 10 subagents
+- Frustration count > 0
+- Cache hit rate < 70%
+- Daily cost > $500
 
-```env
-# Override pricing ($/MTok)
-PRICING_OPUS_INPUT_PER_MTOK=15.0
-PRICING_SONNET_INPUT_PER_MTOK=3.0
+### This week vs last week
 
-# Override thresholds
-THRESHOLD_LONG_SESSION_MINUTES=120
-THRESHOLD_MEGA_PROMPT_CHARS=1000
-THRESHOLD_DAILY_COST_WARNING=500
+Split sessions by `start_ts` into current vs prior calendar week. Compare: cost, sessions, avg duration, frustrations, subagents.
 
-# Add waste domains
-WASTE_WEBFETCH_DOMAINS=github.com,api.github.com,stackoverflow.com
-```
+### Waste signals
 
-## Custom analyzers
+- WebFetch calls to GitHub/API domains (use `gh` CLI instead)
+- Repeated tool chains (same tool 5+ times consecutively)
+- Mega prompts (user messages > 1000 chars — use file references)
+- Model mismatch (Opus on sessions with no Agent/WebSearch/WebFetch)
 
-Drop a `.py` file in `~/.cc-retrospect/analyzers/` implementing the Analyzer protocol:
+### Recommendations
 
-```python
-class MyAnalyzer:
-    name = "my-check"
-    description = "My custom analysis"
+3-5 specific, data-backed recommendations. Quote actual numbers. Name actual projects. No generic advice.
 
-    def analyze(self, sessions, config):
-        # sessions: list[SessionSummary]
-        # Return AnalysisResult(title, sections, recommendations)
-        ...
-```
-
-It will be auto-discovered and included in `/cc-retrospect:report`.
+If analysis used Source 3 and is based on sampling, prefix recommendations with confidence level.

@@ -1,5 +1,5 @@
 ---
-description:
+description: Show and configure which inline hints are enabled.
 ---
 
 ```bash
