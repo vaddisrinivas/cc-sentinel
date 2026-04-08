@@ -421,7 +421,7 @@ class TestFullSessionLifecycle:
 
         live = _load_live_state(config)
         assert live["tool_count"] == 3
-        assert live["message_count"] == 3
+        assert live["message_count"] == 0
 
     def test_lifecycle_subagent_tracking(self, tmp_env):
         claude_dir, data_dir, config = tmp_env

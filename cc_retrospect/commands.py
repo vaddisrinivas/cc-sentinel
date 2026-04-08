@@ -30,35 +30,42 @@ def _print_progress(count: int, label: str = "items", threshold: int = 50) -> No
         print(f"Scanning... {count} {label}", file=sys.stderr)
 
 
-def run_cost(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_cost(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     return _render(CostAnalyzer, payload, config=config)
 
 
-def run_habits(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_habits(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     return _render(HabitsAnalyzer, payload, config=config)
 
 
-def run_health(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_health(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     return _render(HealthAnalyzer, payload, config=config)
 
 
-def run_tips(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_tips(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     return _render(TipsAnalyzer, payload, config=config)
 
 
-def run_waste(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_waste(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     return _render(WasteAnalyzer, payload, config=config)
 
 
-def run_compare(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_compare(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     return _render(CompareAnalyzer, payload, config=config)
 
 
-def run_report(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_report(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     config = config or load_config()
     sessions = load_all_sessions(config)
-    sessions = _filter_sessions(sessions, project=payload.get("project"), days=payload.get("days"))
-    now = datetime.now()
+    sessions = _filter_sessions(sessions, project=payload.get("project"), days=payload.get("days"), config=config)
+    now = datetime.now(timezone.utc)
     parts = [f"# cc-retrospect Report\n\nGenerated: {now.isoformat()}\n"]
     for a in get_analyzers(config):
         parts.append(a.analyze(sessions, config).render_markdown())
@@ -72,23 +79,25 @@ def run_report(payload: dict = {}, *, config: Config | None = None) -> int:
     return 0
 
 
-def run_savings(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_savings(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     return _render(SavingsAnalyzer, payload, config=config)
 
 
-def run_model_efficiency(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_model_efficiency(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     return _render(ModelAnalyzer, payload, config=config)
 
 
-def run_digest(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_digest(payload: dict | None = None, *, config: Config | None = None) -> int:
     """Daily digest: yesterday's sessions analyzed with savings + model efficiency."""
     from cc_retrospect.hooks import _load_compactions
 
+    payload = payload or {}
     config = config or load_config()
     sessions = load_all_sessions(config)
     yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    day_sessions = [s for s in sessions if s.start_ts and yesterday <= s.start_ts[:10] <= today]
+    day_sessions = [s for s in sessions if s.start_ts and s.start_ts[:10] == yesterday]
     if not day_sessions:
         print(f"{config.messages.prefix} No sessions found for {yesterday}.")
         return 0
@@ -124,7 +133,8 @@ def run_digest(payload: dict = {}, *, config: Config | None = None) -> int:
     return 0
 
 
-def run_hints(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_hints(payload: dict | None = None, *, config: Config | None = None) -> int:
+    payload = payload or {}
     config = config or load_config()
     lines = [
         "## cc-retrospect Hint Settings", "",
@@ -140,10 +150,11 @@ def run_hints(payload: dict = {}, *, config: Config | None = None) -> int:
     return 0
 
 
-def run_status(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_status(payload: dict | None = None, *, config: Config | None = None) -> int:
     """Plugin health check — verify install, hooks, data, deps."""
     from cc_retrospect.parsers import iter_jsonl
 
+    payload = payload or {}
     config = config or load_config()
     lines = ["## cc-retrospect Status", ""]
     # Data dir
@@ -193,17 +204,19 @@ def run_status(payload: dict = {}, *, config: Config | None = None) -> int:
     return 0
 
 
-def run_export(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_export(payload: dict | None = None, *, config: Config | None = None) -> int:
     """Export all session data as JSON to stdout."""
+    payload = payload or {}
     config = config or load_config()
     sessions = load_all_sessions(config)
     print(json.dumps([s.model_dump() for s in sessions], default=str))
     return 0
 
 
-def run_trends(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_trends(payload: dict | None = None, *, config: Config | None = None) -> int:
     from cc_retrospect.hooks import _backfill_trends
 
+    payload = payload or {}
     if payload.get("backfill"):
         config = config or load_config()
         _backfill_trends(config)
@@ -211,8 +224,9 @@ def run_trends(payload: dict = {}, *, config: Config | None = None) -> int:
     return _render(TrendAnalyzer, payload, config=config)
 
 
-def run_reset(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_reset(payload: dict | None = None, *, config: Config | None = None) -> int:
     """Clear all cached data files. Sessions are re-scanned on next command."""
+    payload = payload or {}
     config = config or load_config()
     cleared = []
     files_to_clear = ("sessions.jsonl", "state.json", "live_session.json", "compactions.jsonl", "trends.jsonl")
@@ -237,8 +251,9 @@ def run_reset(payload: dict = {}, *, config: Config | None = None) -> int:
     return 0
 
 
-def run_config(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_config(payload: dict | None = None, *, config: Config | None = None) -> int:
     """Show current config values (defaults + overrides from config.env)."""
+    payload = payload or {}
     config = config or load_config()
     lines = ["## cc-retrospect Configuration", ""]
     config_path = config.data_dir / "config.env"
@@ -270,8 +285,9 @@ def run_config(payload: dict = {}, *, config: Config | None = None) -> int:
     return 0
 
 
-def run_uninstall(payload: dict = {}, *, config: Config | None = None) -> int:
+def run_uninstall(payload: dict | None = None, *, config: Config | None = None) -> int:
     """Remove cc-retrospect hooks and plugin registration from settings.json."""
+    payload = payload or {}
     config = config or load_config()
     settings_path = config.claude_dir / "settings.json"
     if not settings_path.exists():

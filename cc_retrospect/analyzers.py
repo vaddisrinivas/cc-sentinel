@@ -41,7 +41,7 @@ class CostAnalyzer:
         recs = []
         opus_cost = model_costs.get("claude-opus-4-6", 0)
         if opus_cost > 0:
-            savings = opus_cost * (1 - 3.0 / 15.0)
+            savings = opus_cost * (1 - config.pricing.sonnet.input_per_mtok / config.pricing.opus.input_per_mtok)
             if savings > 10:
                 recs.append(Recommendation(severity="warning", description="If all Opus usage switched to Sonnet, estimated savings", estimated_savings=_fmt_cost(savings)))
         return AnalysisResult(title="Cost Analysis", sections=sections, recommendations=recs)

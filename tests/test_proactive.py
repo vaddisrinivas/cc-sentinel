@@ -32,7 +32,7 @@ class TestPreToolUse:
     def test_webfetch_github_hint(self, config, capsys):
         from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({
                 "tool_name": "WebFetch",
                 "tool_input": {"url": "https://github.com/org/repo/issues/42"},
@@ -43,7 +43,7 @@ class TestPreToolUse:
     def test_no_hint_for_non_github_webfetch(self, config, capsys):
         from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({
                 "tool_name": "WebFetch",
                 "tool_input": {"url": "https://docs.python.org/3/library/json.html"},
@@ -54,7 +54,7 @@ class TestPreToolUse:
     def test_agent_simple_search_hint(self, config, capsys):
         from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({
                 "tool_name": "Agent",
                 "tool_input": {"prompt": "search for the login function", "subagent_type": "Explore"},
@@ -65,7 +65,7 @@ class TestPreToolUse:
     def test_bash_chain_detection(self, config, capsys):
         from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             # Simulate 5 consecutive Bash calls
             for i in range(5):
                 run_pre_tool_use({"tool_name": "Bash", "tool_input": {"command": f"cmd{i}"}})
@@ -75,7 +75,7 @@ class TestPreToolUse:
     def test_no_hint_for_short_bash_chain(self, config, capsys):
         from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({"tool_name": "Bash", "tool_input": {"command": "ls"}})
             run_pre_tool_use({"tool_name": "Bash", "tool_input": {"command": "pwd"}})
         out = capsys.readouterr().out
@@ -90,10 +90,10 @@ class TestPostToolUse:
         _init_live_state(config)
         # Fast-forward to 149 messages
         live = _load_live_state(config)
-        live["message_count"] = 149
+        live["tool_count"] = 149
         _save_live_state(config, live)
 
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Read"})
         out = capsys.readouterr().out
         assert "compact" in out.lower() or "150" in out
@@ -101,7 +101,7 @@ class TestPostToolUse:
     def test_no_nudge_before_150(self, config, capsys):
         from cc_retrospect.core import run_post_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Read"})
         out = capsys.readouterr().out
         assert out == ""
@@ -113,7 +113,7 @@ class TestPostToolUse:
         live["subagent_count"] = 9  # one below threshold
         _save_live_state(config, live)
 
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Agent"})
         out = capsys.readouterr().out
         assert "subagent" in out.lower() or "agent" in out.lower()
@@ -121,13 +121,13 @@ class TestPostToolUse:
     def test_tracks_tool_count(self, config):
         from cc_retrospect.core import run_post_tool_use, _init_live_state, _load_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Read"})
             run_post_tool_use({"tool_name": "Edit"})
             run_post_tool_use({"tool_name": "Bash"})
         live = _load_live_state(config)
         assert live["tool_count"] == 3
-        assert live["message_count"] == 3
+        assert live["message_count"] == 0
 
 
 class TestEnhancedSessionStart:
@@ -144,7 +144,7 @@ class TestEnhancedSessionStart:
             "last_subagent_count": 2,
         }
         (config.data_dir / "state.json").write_text(json.dumps(state))
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
         assert "cc-retrospect" in out
@@ -153,7 +153,7 @@ class TestEnhancedSessionStart:
 
     def test_first_run_shows_welcome(self, config, capsys):
         from cc_retrospect.core import run_session_start_hook
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
         assert "Welcome" in out or out == ""  # Welcome if sessions found, empty if not
@@ -169,7 +169,7 @@ class TestEnhancedSessionStart:
             "last_subagent_count": 15,
         }
         (config.data_dir / "state.json").write_text(json.dumps(state))
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
         # Should mention: duration, cost, frustration, subagents

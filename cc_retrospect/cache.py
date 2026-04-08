@@ -31,7 +31,7 @@ def _atomic_write_json(path: Path, data: dict) -> None:
 
 def _is_valid_session_id(session_id: str) -> bool:
     """Validate session ID format."""
-    return bool(re.match(r'^[a-zA-Z0-9_-]+$', session_id))
+    return bool(re.match(r'^[a-zA-Z0-9_-]{1,128}$', session_id))
 
 
 def load_all_sessions(config: Config, project_filter: str | None = None) -> list[SessionSummary]:
@@ -72,7 +72,7 @@ def _live_state_path(config: Config) -> Path:
 
 def _init_live_state(config: Config) -> None:
     config.data_dir.mkdir(parents=True, exist_ok=True)
-    _live_state_path(config).write_text(LiveSessionState().model_dump_json())
+    _atomic_write_json(_live_state_path(config), LiveSessionState().model_dump())
 
 
 def _load_live_state(config: Config) -> LiveSessionState:
@@ -84,6 +84,9 @@ def _load_live_state(config: Config) -> LiveSessionState:
 
 
 def _save_live_state(config: Config, state) -> None:
-    if isinstance(state, dict): state = LiveSessionState(**{k: v for k, v in state.items() if k in LiveSessionState.model_fields})
-    try: _live_state_path(config).write_text(state.model_dump_json())
-    except OSError as e: logger.debug("Could not write live state: %s", e)
+    if isinstance(state, dict):
+        state = LiveSessionState(**{k: v for k, v in state.items() if k in LiveSessionState.model_fields})
+    try:
+        _atomic_write_json(_live_state_path(config), state.model_dump())
+    except OSError as e:
+        logger.debug("Could not write live state: %s", e)

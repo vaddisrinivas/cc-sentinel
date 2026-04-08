@@ -3,14 +3,13 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from cc_retrospect.cache import _atomic_write_json, _init_live_state, _load_live_state, _save_live_state, load_all_sessions
+from cc_retrospect.cache import _atomic_write_json, _is_valid_session_id, _init_live_state, _load_live_state, _save_live_state, load_all_sessions
 from cc_retrospect.config import Config, load_config
 from cc_retrospect.models import SessionSummary
 from cc_retrospect.parsers import iter_jsonl, analyze_session, iter_project_sessions
@@ -18,11 +17,6 @@ from cc_retrospect.utils import _fmt_cost, _fmt_duration, _fmt_tokens, display_p
 from cc_retrospect.learn import analyze_user_messages, generate_style, generate_learnings
 
 logger = logging.getLogger("cc_retrospect")
-
-
-def _is_valid_session_id(session_id: str) -> bool:
-    """Validate session ID format."""
-    return bool(re.match(r'^[a-zA-Z0-9_-]+$', session_id))
 
 
 def _compactions_path(config: Config) -> Path:
@@ -74,8 +68,7 @@ def _update_trends(config: Config) -> None:
     complex_tools = {"Agent", "EnterPlanMode", "WebSearch", "WebFetch"}
     opus_simple = sum(s.model_breakdown.get("claude-opus-4-6", 0) for s in week_sessions
                       if not any(t in s.tool_counts for t in complex_tools))
-    all_model_cost = sum(s.total_cost for s in week_sessions)
-    efficiency = int((1 - opus_simple / all_model_cost) * 100) if all_model_cost > 0 else 100
+    efficiency = int((1 - opus_simple / total_cost) * 100) if total_cost > 0 else 100
     compactions = _load_compactions(config, since=week_start.isoformat()[:10])
     snapshot = {
         "week": current_week,
@@ -122,8 +115,7 @@ def _backfill_trends(config: Config) -> None:
             total_cost = sum(s.total_cost for s in ws)
             opus_simple = sum(s.model_breakdown.get("claude-opus-4-6", 0) for s in ws
                               if not any(t in s.tool_counts for t in complex_tools))
-            all_model_cost = sum(s.total_cost for s in ws)
-            efficiency = int((1 - opus_simple / all_model_cost) * 100) if all_model_cost > 0 else 100
+            efficiency = int((1 - opus_simple / total_cost) * 100) if total_cost > 0 else 100
             snapshot = {
                 "week": wk, "cost": round(total_cost, 2), "sessions": len(ws),
                 "avg_duration": round(sum(s.duration_minutes for s in ws) / len(ws), 1),
@@ -147,6 +139,7 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
         logger.warning("Invalid session ID format: %s", session_id)
         return 0
     projects_dir = config.claude_dir / "projects"
+    if not projects_dir.is_dir(): return 0
     jsonl_path = next(
         (pdir / f"{session_id}.jsonl" for pdir in projects_dir.iterdir()
          if pdir.is_dir() and (pdir / f"{session_id}.jsonl").exists()), None
@@ -185,10 +178,6 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
     else:
         state["today_date"] = today
         state["today_cost"] = summary.total_cost
-    try:
-        _atomic_write_json(state_path, state)
-    except Exception as e:
-        logger.debug("Failed to write state.json: %s", e)
     # Waste flags on session end (configurable)
     waste_flags = []
     gh_calls = sum(c for d, c in summary.webfetch_domains.items() if "github.com" in d)
@@ -250,6 +239,12 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
             logger.info("Auto-refreshed STYLE.md and LEARNINGS.md after %d sessions", session_count)
         except Exception as e:
             logger.debug("Auto-refresh learn failed: %s", e)
+
+    # Persist all state mutations
+    try:
+        _atomic_write_json(state_path, state)
+    except Exception as e:
+        logger.debug("Failed to write state.json: %s", e)
 
     # Budget alert
     if state.get("today_cost", 0) > config.thresholds.daily_cost_warning:
@@ -420,14 +415,14 @@ def run_pre_tool_use(payload: dict, *, config: Config | None = None) -> int:
 def run_post_tool_use(payload: dict, *, config: Config | None = None) -> int:
     config = config or load_config()
     live = _load_live_state(config)
-    live.tool_count += 1; live.message_count += 1
+    live.tool_count += 1
     tool_name = payload.get("tool_name", "")
     if tool_name == "Agent": live.subagent_count += 1
     if tool_name == "WebFetch":
         url = (payload.get("tool_input") or {}).get("url", "") if isinstance(payload.get("tool_input"), dict) else ""
         if "github.com" in url: live.webfetch_github_count += 1
     hints = []
-    msg = live.message_count
+    msg = live.tool_count
     th = config.thresholds
     if msg >= th.compact_nudge_first and not live.compact_nudged:
         hints.append(config.messages.hint_compact_first.format(count=msg))

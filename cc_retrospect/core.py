@@ -60,6 +60,7 @@ from cc_retrospect.hooks import (
     run_stop_hook, run_session_start_hook,
     run_pre_tool_use, run_post_tool_use,
     run_user_prompt, run_pre_compact, run_post_compact,
+    _update_trends, _should_show_daily_digest, _backfill_trends,
 )
 
 from cc_retrospect.learn import (
@@ -95,6 +96,7 @@ __all__ = [
     'run_stop_hook', 'run_session_start_hook',
     'run_pre_tool_use', 'run_post_tool_use',
     'run_user_prompt', 'run_pre_compact', 'run_post_compact',
+    '_update_trends', '_should_show_daily_digest', '_backfill_trends',
     # Learn
     'analyze_user_messages', 'generate_style', 'generate_learnings', 'run_learn',
     # Logger

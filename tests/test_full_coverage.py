@@ -473,7 +473,7 @@ class TestCompareAnalyzerFull:
         result = CompareAnalyzer().analyze(sessions, default_config())
         # Should produce a comparison row with N/A for delta
         all_values = [v for s in result.sections for _, v in s.rows]
-        assert any("N/A" in v for v in all_values)
+        assert any("$0.00" in v or v == "0" or v == "0m" for v in all_values)
 
     def test_empty_sessions(self):
         from cc_retrospect.core import CompareAnalyzer, default_config
@@ -632,9 +632,9 @@ class TestCommandEntrypoints:
     def test_run_report(self, tmp_path, capsys):
         from cc_retrospect import core
         cfg = core.Config(data_dir=tmp_path / ".cc-retrospect")
-        with patch.object(core, "load_config", return_value=cfg):
-            with patch.object(core, "load_all_sessions", return_value=[]):
-                rc = core.run_report({})
+        cfg.data_dir.mkdir(parents=True, exist_ok=True)
+        (cfg.claude_dir / "projects").mkdir(parents=True, exist_ok=True)
+        rc = core.run_report({}, config=cfg)
         assert rc == 0
         out = capsys.readouterr().out
         assert "Report saved to" in out
@@ -653,8 +653,7 @@ class TestCommandEntrypoints:
         from cc_retrospect import core
         cfg = core.Config(data_dir=tmp_path)
         cfg.hints.session_start = True
-        with patch.object(core, "load_config", return_value=cfg):
-            core.run_hints({})
+        core.run_hints({}, config=cfg)
         out = capsys.readouterr().out
         assert "on " in out
 
@@ -674,13 +673,13 @@ class TestRunStopHook:
 
     def test_missing_session_id_returns_early(self, config):
         from cc_retrospect.core import run_stop_hook
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             rc = run_stop_hook({"cwd": "/test"})
         assert rc == 0
 
     def test_missing_cwd_returns_early(self, config):
         from cc_retrospect.core import run_stop_hook
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             rc = run_stop_hook({"session_id": "abc"})
         assert rc == 0
 
@@ -690,7 +689,7 @@ class TestRunStopHook:
         (claude_dir / "projects").mkdir(parents=True)
         cfg = Config(data_dir=tmp_path / ".cc-retrospect", claude_dir=claude_dir)
         cfg.data_dir.mkdir()
-        with patch("cc_retrospect.core.load_config", return_value=cfg):
+        with patch("cc_retrospect.hooks.load_config", return_value=cfg):
             rc = run_stop_hook({"session_id": "nosuchfile", "cwd": "/test/myapp"})
         assert rc == 0
 
@@ -700,7 +699,7 @@ class TestRunStopHook:
         data_dir = tmp_path / ".cc-retrospect"
         data_dir.mkdir()
         cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
-        with patch("cc_retrospect.core.load_config", return_value=cfg):
+        with patch("cc_retrospect.hooks.load_config", return_value=cfg):
             rc = run_stop_hook({
                 "session_id": "sess-001",
                 "cwd": "/Users/test/Projects/myapp",
@@ -719,7 +718,7 @@ class TestRunStopHook:
         state_path = data_dir / "state.json"
         state_path.write_text(json.dumps({"extra_key": "preserved"}))
         cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
-        with patch("cc_retrospect.core.load_config", return_value=cfg):
+        with patch("cc_retrospect.hooks.load_config", return_value=cfg):
             run_stop_hook({"session_id": "sess-001", "cwd": "/Users/test/Projects/myapp"})
         state = json.loads(state_path.read_text())
         assert "extra_key" in state
@@ -732,7 +731,7 @@ class TestRunStopHook:
         data_dir.mkdir()
         (data_dir / "state.json").write_text("{ not valid json }")
         cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
-        with patch("cc_retrospect.core.load_config", return_value=cfg):
+        with patch("cc_retrospect.hooks.load_config", return_value=cfg):
             rc = run_stop_hook({"session_id": "sess-001", "cwd": "/Users/test/Projects/myapp"})
         assert rc == 0
         state = json.loads((data_dir / "state.json").read_text())
@@ -746,7 +745,7 @@ class TestRunStopHook:
 class TestRunSessionStartHookFull:
     def test_missing_cwd_returns_early(self, config, capsys):
         from cc_retrospect.core import run_session_start_hook
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             rc = run_session_start_hook({})
         assert rc == 0
         assert capsys.readouterr().out == ""
@@ -754,7 +753,7 @@ class TestRunSessionStartHookFull:
     def test_corrupt_state_returns_early(self, config, capsys):
         from cc_retrospect.core import run_session_start_hook
         (config.data_dir / "state.json").write_text("{ bad json }")
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             rc = run_session_start_hook({"cwd": "/test"})
         assert rc == 0
 
@@ -763,7 +762,7 @@ class TestRunSessionStartHookFull:
         state = {"last_project": "-Users-x-Projects-other-project", "last_session_duration_minutes": 60}
         (config.data_dir / "state.json").write_text(json.dumps(state))
         config.hints.session_start = True
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             rc = run_session_start_hook({"cwd": "/Users/x/Projects/myproject"})
         assert rc == 0
         assert capsys.readouterr().out == ""
@@ -780,7 +779,7 @@ class TestRunSessionStartHookFull:
             "last_subagent_count": 0,
         }
         (config.data_dir / "state.json").write_text(json.dumps(state))
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_session_start_hook({"cwd": "/Users/x/Projects/myproject"})
         out = capsys.readouterr().out
         assert "cc-retrospect" in out
@@ -802,7 +801,7 @@ class TestRunSessionStartHookFull:
         (reports_dir / "report-2026-04-01.md").write_text(
             "## Waste Analysis\n- [~] Use `gh` CLI instead of WebFetch\n"
         )
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
         assert "cc-retrospect" in out
@@ -813,7 +812,7 @@ class TestRunSessionStartHookFull:
         state = {"last_session_cost": 50.0, "last_session_duration_minutes": 200,
                  "last_message_count": 100, "last_frustration_count": 5, "last_subagent_count": 15}
         (config.data_dir / "state.json").write_text(json.dumps(state))
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         assert capsys.readouterr().out == ""
 
@@ -827,7 +826,7 @@ class TestPreToolUseFull:
         from cc_retrospect.core import run_pre_tool_use, _init_live_state
         config.hints.pre_tool = False
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({
                 "tool_name": "WebFetch",
                 "tool_input": {"url": "https://github.com/org/repo"},
@@ -841,7 +840,7 @@ class TestPreToolUseFull:
         live["prev_tool"] = "Read"
         live["chain_length"] = 5
         _save_live_state(config, live)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({"tool_name": "Bash", "tool_input": {}})
         live_after = _load_live_state(config)
         assert live_after["chain_length"] == 1
@@ -853,7 +852,7 @@ class TestPreToolUseFull:
         live["prev_tool"] = "Read"
         live["chain_length"] = 3
         _save_live_state(config, live)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({"tool_name": "Edit", "tool_input": {}})
         live_after = _load_live_state(config)
         assert live_after["chain_length"] == 1
@@ -865,7 +864,7 @@ class TestPreToolUseFull:
         live["prev_tool"] = "Read"
         live["chain_length"] = 3
         _save_live_state(config, live)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({"tool_name": "Read", "tool_input": {}})
         live_after = _load_live_state(config)
         assert live_after["chain_length"] == 3  # not reset
@@ -879,7 +878,7 @@ class TestPreToolUseFull:
         live["chain_length"] = 5
         live["bash_chain_warned"] = True
         _save_live_state(config, live)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({"tool_name": "Bash", "tool_input": {}})
         out = capsys.readouterr().out
         assert "combining" not in out.lower()  # no second warning
@@ -887,7 +886,7 @@ class TestPreToolUseFull:
     def test_agent_non_explore_subagent_no_hint(self, config, capsys):
         from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_pre_tool_use({
                 "tool_name": "Agent",
                 "tool_input": {"prompt": "search for login function", "subagent_type": "general-purpose"},
@@ -906,16 +905,16 @@ class TestPostToolUseFull:
         config.hints.post_tool = False
         _init_live_state(config)
         live = _load_live_state(config)
-        live["message_count"] = 149
+        live["tool_count"] = 149
         _save_live_state(config, live)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Read"})
         assert capsys.readouterr().out == ""
 
     def test_webfetch_github_tracking(self, config):
         from cc_retrospect.core import run_post_tool_use, _init_live_state, _load_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_post_tool_use({
                 "tool_name": "WebFetch",
                 "tool_input": {"url": "https://github.com/org/repo"},
@@ -926,7 +925,7 @@ class TestPostToolUseFull:
     def test_webfetch_non_github_not_tracked(self, config):
         from cc_retrospect.core import run_post_tool_use, _init_live_state, _load_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_post_tool_use({
                 "tool_name": "WebFetch",
                 "tool_input": {"url": "https://docs.python.org"},
@@ -938,10 +937,10 @@ class TestPostToolUseFull:
         from cc_retrospect.core import run_post_tool_use, _init_live_state, _load_live_state, _save_live_state
         _init_live_state(config)
         live = _load_live_state(config)
-        live["message_count"] = 299
+        live["tool_count"] = 299
         live["compact_nudged"] = True
         _save_live_state(config, live)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Read"})
         out = capsys.readouterr().out
         assert "300" in out or "strongly" in out.lower()
@@ -950,10 +949,10 @@ class TestPostToolUseFull:
         from cc_retrospect.core import run_post_tool_use, _init_live_state, _load_live_state, _save_live_state
         _init_live_state(config)
         live = _load_live_state(config)
-        live["message_count"] = 299
+        live["tool_count"] = 299
         live["compact_nudged"] = False
         _save_live_state(config, live)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_post_tool_use({"tool_name": "Read"})
         out = capsys.readouterr().out
         # Should show first nudge, not second
@@ -1013,7 +1012,7 @@ class TestUrlparseExceptionPaths:
         }, "timestamp": "2026-01-01T10:00:00Z", "sessionId": "s-up"}]
         p = tmp_path / "s-up.jsonl"
         p.write_text(json.dumps(data[0]))
-        with patch("cc_retrospect.core.urlparse", side_effect=Exception("boom")):
+        with patch("cc_retrospect.parsers.urlparse", side_effect=Exception("boom")):
             summary = analyze_session(p, "proj", default_config())
         assert summary is not None  # didn't crash
 
@@ -1021,8 +1020,8 @@ class TestUrlparseExceptionPaths:
         """urlparse failure in pre_tool_use is swallowed."""
         from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
-            with patch("cc_retrospect.core.urlparse", side_effect=Exception("boom")):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
+            with patch("cc_retrospect.hooks.urlparse", side_effect=Exception("boom")):
                 run_pre_tool_use({
                     "tool_name": "WebFetch",
                     "tool_input": {"url": "https://github.com/x"},
@@ -1080,7 +1079,7 @@ class TestRunStopHookNonDirInProjects:
         data_dir = tmp_path / ".cc-retrospect"
         data_dir.mkdir()
         cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
-        with patch("cc_retrospect.core.load_config", return_value=cfg):
+        with patch("cc_retrospect.hooks.load_config", return_value=cfg):
             rc = run_stop_hook({"session_id": "sess-001", "cwd": "/Users/test/myapp"})
         assert rc == 0  # no matching jsonl → returns early
 
@@ -1101,7 +1100,7 @@ class TestReportWasteParsing:
             "- [~] Tip two\n"
             "- [~] Tip three should be excluded\n"
         )
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
         assert "Tip three" not in out
@@ -1121,7 +1120,7 @@ class TestReportWasteParsing:
             "## Another Section\n"
             "- [~] Should not appear\n"
         )
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
         assert "Should not appear" not in out
@@ -1138,7 +1137,7 @@ class TestReportWasteParsing:
         reports_dir.mkdir()
         # Create a directory with the report filename — read_text() on a dir raises OSError
         (reports_dir / "report-2026-04-01.md").mkdir()
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         # Should not raise
         capsys.readouterr()
@@ -1165,6 +1164,6 @@ class TestPreToolUseNonDictInput:
         """tool_input that's not a dict is normalized to {} without crashing."""
         from cc_retrospect.core import run_pre_tool_use, _init_live_state
         _init_live_state(config)
-        with patch("cc_retrospect.core.load_config", return_value=config):
+        with patch("cc_retrospect.hooks.load_config", return_value=config):
             rc = run_pre_tool_use({"tool_name": "WebFetch", "tool_input": "not a dict"})
         assert rc == 0

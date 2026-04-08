@@ -74,10 +74,11 @@ def _filter_sessions(sessions: list[SessionSummary], project: str | None = None,
     return sessions
 
 
-def _render(analyzer_cls, payload: dict = {}, *, config: Config | None = None, sessions=None) -> int:
+def _render(analyzer_cls, payload: dict | None = None, *, config: Config | None = None, sessions=None) -> int:
     from cc_retrospect.config import load_config
     from cc_retrospect.cache import load_all_sessions
 
+    payload = payload or {}
     cfg = config or load_config()
     ss = sessions if sessions is not None else load_all_sessions(cfg)
     ss = _filter_sessions(ss, project=payload.get("project"), days=payload.get("days"), config=cfg)

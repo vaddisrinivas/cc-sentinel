@@ -21,7 +21,6 @@ Usage:
 """
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import sys
@@ -118,30 +117,16 @@ def _parse_cli_flags() -> dict:
 
 
 def main() -> int:
-    if len(sys.argv) < 2:
-        parser = argparse.ArgumentParser(prog="dispatch.py", description="cc-retrospect dispatcher")
-        parser.add_argument("--help", action="store_true", help="Show this help message")
-        parser.add_argument("--version", action="store_true", help="Show version")
-        args = parser.parse_args()
-        if args.help or args.version:
-            if args.version:
-                print("cc-retrospect 2.1.0")
-            else:
-                print(f"Usage: dispatch.py <{'|'.join(sorted(_DISPATCH))}>")
-                print("Flags: --help, --version, --verbose, --json, --project NAME, --days N, --exclude PATTERN")
-            return 0
-        print(f"Usage: dispatch.py <{'|'.join(sorted(_DISPATCH))}>" , file=sys.stderr)
-        return 1
+    if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h"):
+        print(f"Usage: dispatch.py <{'|'.join(sorted(_DISPATCH))}>")
+        print("Flags: --help, --version, --verbose, --json, --project NAME, --days N, --exclude PATTERN")
+        return 0 if len(sys.argv) >= 2 else 1
 
     cmd = sys.argv[1]
 
-    # Handle --help and --version flags
-    if cmd == "--help" or cmd == "-h":
-        print(f"Usage: dispatch.py <{'|'.join(sorted(_DISPATCH))}>")
-        print("Flags: --help, --version, --verbose, --json, --project NAME, --days N, --exclude PATTERN")
-        return 0
     if cmd == "--version":
-        print("cc-retrospect 2.1.0")
+        from cc_retrospect import __version__
+        print(f"cc-retrospect {__version__}")
         return 0
 
     if cmd not in _DISPATCH:
