@@ -207,6 +207,34 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
         state["last_waste_flags"] = waste_flags
         logger.info("Session waste: %s", ", ".join(waste_flags))
 
+    # Write model recommendation JSON
+    try:
+        recommendation = {
+            "recommended_model": "sonnet" if summary.total_cost > 5 else "haiku",
+            "reason": "Based on session cost and complexity",
+            "confidence": 0.75,
+            "session_id": summary.session_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        rec_path = config.data_dir / "model_recommendation.json"
+        _atomic_write_json(rec_path, recommendation)
+    except Exception as e:
+        logger.debug("Failed to write model recommendation: %s", e)
+
+    # Write waste entries to LATER.md if enabled
+    if config.hints.waste_to_later and waste_flags:
+        try:
+            later_path = config.claude_dir / "LATER.md"
+            later_content = ""
+            if later_path.exists():
+                later_content = later_path.read_text(encoding="utf-8")
+            timestamp = datetime.now(timezone.utc).isoformat()[:16]
+            waste_entry = f"- [{timestamp}] cc-retrospect: {', '.join(waste_flags)} [cc-retrospect auto]\n"
+            later_content += waste_entry
+            later_path.write_text(later_content, encoding="utf-8")
+        except Exception as e:
+            logger.debug("Failed to write to LATER.md: %s", e)
+
     # Auto-refresh LEARNINGS.md periodically
     session_count = state.get("session_count_since_learn", 0) + 1
     state["session_count_since_learn"] = session_count

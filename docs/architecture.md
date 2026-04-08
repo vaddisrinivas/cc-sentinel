@@ -1,81 +1,230 @@
 # Architecture
 
-## File structure
+How cc-retrospect works internally.
+
+## Module diagram
 
 ```
-cc_retrospect/
-  core.py              — all business logic (~1900 LOC)
-  __init__.py           — version + public API exports
-  py.typed              — PEP 561 marker
-scripts/
-  dispatch.py           — stdin/argv router (25 routes)
-  default_config.env    — full config reference
-commands/*.md           — 18 slash commands (single bash block each)
-skills/*/SKILL.md       — 8 skills (3 standalone + 5 hybrid)
-hooks/hooks.json        — 7 hook definitions
-tests/                  — 277+ tests
+scripts/dispatch.py
+    │
+    ├─→ _read_payload() ─→ Hooks (passive, JSON from Claude Code)
+    │      │
+    │      └─→ cc_retrospect/hooks.py
+    │           ├─ run_stop_hook (analyze on session end)
+    │           ├─ run_session_start_hook (recap + health)
+    │           ├─ run_pre_tool_use (warn before waste)
+    │           └─ run_post_tool_use (nudge compaction)
+    │
+    └─→ _parse_cli_flags() ─→ Commands (active, user invokes)
+           │
+           └─→ cc_retrospect/commands.py
+                ├─ run_cost()
+                ├─ run_waste()
+                ├─ run_health()
+                ├─ run_reset()
+                └─ ... (18 total)
+                    │
+                    └─→ _render() ─→ Analyzers
+                         │
+                         └─→ cc_retrospect/analyzers.py
+                              ├─ CostAnalyzer
+                              ├─ WasteAnalyzer
+                              ├─ HealthAnalyzer
+                              ├─ TipsAnalyzer
+                              ├─ CompareAnalyzer
+                              ├─ SavingsAnalyzer
+                              ├─ ModelAnalyzer
+                              └─ TrendAnalyzer
 ```
 
-## Three layers
+## Data flow: Session end
 
-### Precision layer (Python)
+```
+1. Claude Code stops session
+   ↓
+2. run_stop_hook() receives {session_id, cwd}
+   ↓
+3. Locate session JSONL: ~/.claude/projects/PROJECT/SESSION_ID.jsonl
+   ↓
+4. analyze_session() parses JSONL → SessionSummary
+   - Extracts: cost, duration, model, tools, waste flags
+   - Calls: CostAnalyzer, WasteAnalyzer, etc. for flags
+   ↓
+5. Append to ~/.cc-retrospect/sessions.jsonl
+   ↓
+6. Update state.json (last session, daily cost, trends)
+   ↓
+7. If hints.waste_on_stop: print waste flags to stderr
+```
 
-Exact numbers. Deterministic. Fast.
+## Data flow: User command
 
-`core.py` contains all analyzers: `CostAnalyzer`, `WasteAnalyzer`, `HabitsAnalyzer`, `HealthAnalyzer`, `TipsAnalyzer`, `CompareAnalyzer`, `SavingsAnalyzer`, `ModelAnalyzer`, `TrendAnalyzer`.
+```
+1. User runs: /cc-retrospect:cost --days 7 --json
+   ↓
+2. dispatch.py parses flags → {days: 7, json: True}
+   ↓
+3. run_cost() called with payload
+   ↓
+4. _render() loads all sessions from cache
+   ↓
+5. _filter_sessions() applies filters (project, days, exclude)
+   ↓
+6. CostAnalyzer.analyze() processes filtered sessions
+   ↓
+7. AnalysisResult.render_markdown() or render_json()
+   ↓
+8. Output to stdout
+```
 
-Each follows the same protocol:
+## Config layering
+
+```
+Defaults (code)
+  ↓
+  + Overrides (config.env)
+  ↓
+  = Config object (loaded by commands)
+
+~/.cc-retrospect/config.env
+PRICING__SONNET__INPUT_PER_MTOK=3.0
+THRESHOLDS__LONG_SESSION_MINUTES=120
+HINTS__SESSION_START=true
+```
+
+## SessionSummary structure
+
+```json
+{
+  "session_id": "abc123",
+  "project": "myproject",
+  "start_ts": "2026-04-08T14:30:00Z",
+  "duration_minutes": 45,
+  "message_count": 23,
+  "total_cost": 12.50,
+  "model_breakdown": {
+    "claude-opus-4-6": 10.00,
+    "claude-sonnet-4-20250514": 2.50
+  },
+  "tool_counts": {
+    "Read": 15,
+    "Bash": 8,
+    "Grep": 3
+  },
+  "tool_chains": [
+    ["Read", 5],
+    ["Bash", 3]
+  ],
+  "frustration_count": 2,
+  "subagent_count": 1,
+  "webfetch_domains": {"github.com": 3},
+  "mega_prompt_count": 1
+}
+```
+
+## AnalysisResult structure
+
 ```python
-class Analyzer(Protocol):
-    name: str
-    description: str
-    def analyze(self, sessions: list[SessionSummary], config: Config) -> AnalysisResult: ...
+class AnalysisResult(BaseModel):
+    title: str
+    lines: list[str]
+    warnings: list[str] = []
+    tips: list[str] = []
+    
+    def render_markdown(self) -> str:
+        # Returns formatted markdown
+    
+    def render_json(self) -> dict:
+        # Returns JSON-serializable dict
 ```
 
-### Behavioral layer (Skills)
+## Caching strategy
 
-Claude reasons about patterns. Non-deterministic. Deep.
+- **sessions.jsonl** — append-only log of SessionSummary (JSONL)
+- **state.json** — live state (last session, daily cost, etc.)
+- **compactions.jsonl** — log of compaction events
+- **trends.jsonl** — weekly snapshots for trends
+- **model_recommendation.json** — latest model suggestion
+- **LATER.md** — waste entries tagged for later review
 
-Skills run the precision commands first (`dispatch.py cost --json`), then interpret the output — naming specific projects, explaining correlations, spotting patterns Python can't.
+## Performance notes
 
-### Action layer (Hooks)
+1. **First load is slow**: `load_all_sessions()` scans `~/.claude/projects/`
+   - Subsequent calls use `sessions.jsonl` cache
+   - Clear with: `/cc-retrospect:reset`
 
-Automatic. Silent unless there's something to warn about.
+2. **Large cache scans**: Print progress every 50 items
+   ```python
+   for i, session in enumerate(sessions):
+       if i % 50 == 0:
+           print(f"Scanning... {i} sessions", file=sys.stderr)
+   ```
 
-Hook flow:
-```
-SessionStart → load state.json → show recap/digest/health → init live state
-PreToolUse   → check WebFetch/Agent/Bash patterns → warn if wasteful
-PostToolUse  → increment counters → nudge compact at thresholds
-UserPromptSubmit → check prompt size → warn on oversized pastes
-PreCompact   → log compaction event
-PostCompact  → log tokens freed
-Stop         → analyze session → cache summary → update budget → refresh trends
-```
+3. **JSONL append is atomic**: Safe for concurrent hooks
+   - Uses `_atomic_write_json()` for state.json
 
-## Data flow
+4. **Filters applied early**: project, days, exclude filters reduce processing
 
-```
-~/.claude/projects/**/*.jsonl  ←  Claude Code writes these
-         ↓
-    analyze_session()          ←  parse JSONL, extract tokens/tools/frustration
-         ↓
-~/.cc-retrospect/sessions.jsonl ← cached summaries (append-only)
-         ↓
-    load_all_sessions()        ←  disk scan + cache merge
-         ↓
-    Analyzers                  ←  compute metrics
-         ↓
-    AnalysisResult             ←  sections + recommendations
-         ↓
-    render_markdown() / render_json()
-```
+## Extending cc-retrospect
 
-## Config system
+### Add a new analyzer
 
-Uses pydantic-settings. Config loaded from (in priority order):
-1. Environment variables (e.g. `PRICING__OPUS__INPUT_PER_MTOK=20`)
-2. Config file at `~/.cc-retrospect/config.env`
-3. Defaults in `Config(BaseSettings)`
+1. Create class in `analyzers.py`:
+   ```python
+   class MyAnalyzer(BaseAnalyzer):
+       def analyze(self, sessions, config):
+           # Process sessions
+           return AnalysisResult(...)
+   ```
 
-All config fields are nested with `__` delimiter. No prefix needed.
+2. Add command in `commands.py`:
+   ```python
+   def run_my_command(payload, config=None):
+       return _render(MyAnalyzer, payload, config=config)
+   ```
+
+3. Register in `dispatch.py`:
+   ```python
+   _DISPATCH["my_command"] = run_my_command
+   ```
+
+### Add a new config field
+
+1. Add to model in `config.py`:
+   ```python
+   class MyConfig(BaseModel):
+       new_field: str = "default"
+   ```
+
+2. Add to `Config`:
+   ```python
+   my_config: MyConfig = MyConfig()
+   ```
+
+3. Env var: `MY_CONFIG__NEW_FIELD=value`
+
+### Add a new hook
+
+1. Implement in `hooks.py`:
+   ```python
+   def run_my_hook(payload, config=None):
+       # Your logic
+       return 0
+   ```
+
+2. Register in `dispatch.py`:
+   ```python
+   _DISPATCH["my_hook"] = run_my_hook
+   _HOOKS = {..., "my_hook"}
+   ```
+
+3. Configure in Claude Code settings.json (hooks fire on events)
+
+## Testing
+
+All tests in `tests/`. Use patterns:
+- `default_config()` for test config
+- `SessionSummary(...)` to create test data
+- `load_all_sessions(config)` to read cache
+
+Run: `make test`

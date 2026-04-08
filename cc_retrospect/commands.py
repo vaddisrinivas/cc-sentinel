@@ -13,6 +13,23 @@ from cc_retrospect.analyzers import get_analyzers, CostAnalyzer, HabitsAnalyzer,
 from cc_retrospect.utils import _render, _fmt_cost, _fmt_tokens, _fmt_duration, display_project, _filter_sessions
 
 
+def _get_confirmation(prompt: str) -> bool:
+    """Request 'y' confirmation from TTY. Return True if TTY and user confirms, else True (non-TTY)."""
+    if not sys.stdin.isatty():
+        return True
+    try:
+        response = input(f"{prompt} [y/N]: ").strip().lower()
+        return response == 'y'
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+
+def _print_progress(count: int, label: str = "items", threshold: int = 50) -> None:
+    """Print progress message every `threshold` items."""
+    if count % threshold == 0 and count > 0:
+        print(f"Scanning... {count} {label}", file=sys.stderr)
+
+
 def run_cost(payload: dict = {}, *, config: Config | None = None) -> int:
     return _render(CostAnalyzer, payload, config=config)
 
@@ -134,8 +151,15 @@ def run_status(payload: dict = {}, *, config: Config | None = None) -> int:
     lines.append(f"Data directory: {config.data_dir} ({'exists' if data_exists else 'MISSING'})")
     # Session count
     cache_path = config.data_dir / "sessions.jsonl"
-    session_count = sum(1 for _ in iter_jsonl(cache_path)) if cache_path.exists() else 0
-    lines.append(f"Cached sessions: {session_count}")
+    session_count = 0
+    if cache_path.exists():
+        for _ in iter_jsonl(cache_path):
+            session_count += 1
+            _print_progress(session_count, "sessions")
+    if session_count == 0:
+        lines.append(f"Cached sessions: No sessions yet")
+    else:
+        lines.append(f"Cached sessions: {session_count}")
     # Config file
     config_path = config.data_dir / "config.env"
     lines.append(f"Config file: {config_path} ({'found' if config_path.exists() else 'not found (using defaults)'})")
@@ -152,7 +176,10 @@ def run_status(payload: dict = {}, *, config: Config | None = None) -> int:
     if state_path.exists():
         try:
             state = json.loads(state_path.read_text())
-            lines.append(f"Last session: {state.get('last_ts', 'unknown')[:16]} ({display_project(state.get('last_project', '?'))})")
+            last_ts = state.get('last_ts', 'unknown')
+            if last_ts != 'unknown':
+                last_ts = last_ts[:16]
+            lines.append(f"Last session: {last_ts} ({display_project(state.get('last_project', '?'))})")
         except (json.JSONDecodeError, OSError): pass
     # Deps
     try:
@@ -188,7 +215,17 @@ def run_reset(payload: dict = {}, *, config: Config | None = None) -> int:
     """Clear all cached data files. Sessions are re-scanned on next command."""
     config = config or load_config()
     cleared = []
-    for name in ("sessions.jsonl", "state.json", "live_session.json", "compactions.jsonl", "trends.jsonl"):
+    files_to_clear = ("sessions.jsonl", "state.json", "live_session.json", "compactions.jsonl", "trends.jsonl")
+
+    # Print what will be deleted
+    existing = [name for name in files_to_clear if (config.data_dir / name).exists()]
+    if existing:
+        print(f"[cc-retrospect] Will delete: {', '.join(existing)}")
+        if not _get_confirmation("Confirm deletion"):
+            print("[cc-retrospect] Reset cancelled.")
+            return 0
+
+    for name in files_to_clear:
         path = config.data_dir / name
         if path.exists():
             path.unlink()

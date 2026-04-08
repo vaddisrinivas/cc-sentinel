@@ -1,10 +1,16 @@
 # cc-retrospect
 
+[![Tests](https://github.com/vaddisrinivas/cc-retrospect/workflows/Test/badge.svg)](https://github.com/vaddisrinivas/cc-retrospect/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+
 **Stop burning tokens you can't see.**
 
 Claude Code doesn't show you what you're spending. No cost dashboard, no warning when a session hits 300 messages, no signal that you used Opus for a task Sonnet could handle. cc-retrospect fixes that — real-time interception, automatic tracking, and on-demand analysis.
 
 ## Install
+
+Choose one method:
 
 ### Claude Code plugin (recommended)
 
@@ -61,7 +67,8 @@ All commands support `--json`, `--project NAME`, and `--days N` flags.
 - [Commands & Skills](docs/commands.md) — all 18 commands and 8 skills
 - [Configuration](docs/configuration.md) — pricing, thresholds, hints, custom analyzers
 - [Architecture](docs/architecture.md) — how it works, hook flow, data sources
-- [Development](docs/development.md) — running tests, contributing
+- [Troubleshooting](docs/troubleshooting.md) — cache bloat, hook debug, state recovery
+- [Contributing](CONTRIBUTING.md) — fork, dev setup, PR checklist
 
 ## Data
 

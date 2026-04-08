@@ -12,14 +12,18 @@ Usage:
     python3 dispatch.py user_prompt
 
   Commands (no stdin, optional flags):
-    python3 dispatch.py cost [--json] [--project NAME] [--days N]
+    python3 dispatch.py cost [--help] [--json] [--project NAME] [--days N] [--verbose]
     python3 dispatch.py reset
     python3 dispatch.py config [--json]
     python3 dispatch.py trends --backfill
+    python3 dispatch.py status
+    python3 dispatch.py [--help] [--version]
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -85,7 +89,7 @@ def _read_payload() -> dict:
 
 
 def _parse_cli_flags() -> dict:
-    """Parse --json, --project NAME, --days N, --backfill from sys.argv."""
+    """Parse --json, --project NAME, --days N, --backfill, --exclude, --verbose from sys.argv."""
     payload: dict = {}
     args = sys.argv[2:]  # skip script name and command
     i = 0
@@ -94,6 +98,9 @@ def _parse_cli_flags() -> dict:
             payload["json"] = True
         elif args[i] == "--backfill":
             payload["backfill"] = True
+        elif args[i] == "--verbose":
+            payload["verbose"] = True
+            os.environ["CC_RETROSPECT_LOG_LEVEL"] = "DEBUG"
         elif args[i] == "--project" and i + 1 < len(args):
             payload["project"] = args[i + 1]
             i += 1
@@ -103,16 +110,44 @@ def _parse_cli_flags() -> dict:
             except ValueError:
                 pass
             i += 1
+        elif args[i] == "--exclude" and i + 1 < len(args):
+            payload["exclude"] = args[i + 1]
+            i += 1
         i += 1
     return payload
 
 
 def main() -> int:
-    if len(sys.argv) < 2 or sys.argv[1] not in _DISPATCH:
+    if len(sys.argv) < 2:
+        parser = argparse.ArgumentParser(prog="dispatch.py", description="cc-retrospect dispatcher")
+        parser.add_argument("--help", action="store_true", help="Show this help message")
+        parser.add_argument("--version", action="store_true", help="Show version")
+        args = parser.parse_args()
+        if args.help or args.version:
+            if args.version:
+                print("cc-retrospect 2.1.0")
+            else:
+                print(f"Usage: dispatch.py <{'|'.join(sorted(_DISPATCH))}>")
+                print("Flags: --help, --version, --verbose, --json, --project NAME, --days N, --exclude PATTERN")
+            return 0
         print(f"Usage: dispatch.py <{'|'.join(sorted(_DISPATCH))}>" , file=sys.stderr)
         return 1
 
     cmd = sys.argv[1]
+
+    # Handle --help and --version flags
+    if cmd == "--help" or cmd == "-h":
+        print(f"Usage: dispatch.py <{'|'.join(sorted(_DISPATCH))}>")
+        print("Flags: --help, --version, --verbose, --json, --project NAME, --days N, --exclude PATTERN")
+        return 0
+    if cmd == "--version":
+        print("cc-retrospect 2.1.0")
+        return 0
+
+    if cmd not in _DISPATCH:
+        print(f"Usage: dispatch.py <{'|'.join(sorted(_DISPATCH))}>" , file=sys.stderr)
+        return 1
+
     if cmd in _HOOKS:
         payload = _read_payload()
     else:

@@ -27,10 +27,13 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=7.0", "pytest-cov>=4.0"]
+dev = ["ruff>=0.2.0", "pyright>=1.1.0", "pre-commit>=3.0"]
 
 [project.urls]
 Homepage = "https://github.com/vaddisrinivas/cc-retrospect"
 Repository = "https://github.com/vaddisrinivas/cc-retrospect"
+Documentation = "https://github.com/vaddisrinivas/cc-retrospect/tree/main/docs"
+Issues = "https://github.com/vaddisrinivas/cc-retrospect/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["cc_retrospect"]

@@ -48,6 +48,7 @@ class HintsConfig(BaseModel):
     daily_digest: bool = True
     waste_on_stop: bool = True
     auto_learn: bool = True
+    waste_to_later: bool = False
 
 
 class MessagesConfig(BaseModel):
