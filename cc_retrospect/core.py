@@ -1632,8 +1632,6 @@ class UserProfile(BaseModel):
 
 def analyze_user_messages(config: Config) -> UserProfile:
     """Scan all JSONL files and build a behavioral profile."""
-    from urllib.parse import urlparse as _urlparse
-
     lengths = []
     openers = Counter()
     approvals = Counter()
@@ -2009,12 +2007,12 @@ def run_learn(payload: dict = {}, *, config: Config | None = None) -> int:
     print(style_content)
     print("--- Generated LEARNINGS.md ---")
     print(learnings_content)
-    print(f"Files written to:")
+    print("Files written to:")
     print(f"  {style_path}")
     print(f"  {learnings_path}")
     print()
-    print(f"To apply: copy STYLE.md to ~/.claude/STYLE.md and add @STYLE.md to ~/.claude/CLAUDE.md")
-    print(f"To share: LEARNINGS.md contains no PII — safe to share as a template.")
+    print("To apply: copy STYLE.md to ~/.claude/STYLE.md and add @STYLE.md to ~/.claude/CLAUDE.md")
+    print("To share: LEARNINGS.md contains no PII — safe to share as a template.")
     return 0
 
 
