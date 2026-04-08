@@ -6,12 +6,23 @@ Claude Code doesn't show you what you're spending. No cost dashboard, no warning
 
 ## Install
 
+### From GitHub (recommended)
+
 ```bash
 git clone https://github.com/vaddisrinivas/cc-retrospect ~/.claude/plugins/cc-retrospect
-cd ~/.claude/plugins/cc-retrospect && uv pip install -e .
+~/.claude/plugins/cc-retrospect/install.sh
 ```
 
-No `uv`? Use `pip install -e .` instead. Hooks are auto-discovered by Claude Code from the plugin.
+The installer detects `uv`/`pip`, installs dependencies, verifies the plugin, and optionally backfills trend data from your existing sessions.
+
+### Manual
+
+```bash
+git clone https://github.com/vaddisrinivas/cc-retrospect ~/.claude/plugins/cc-retrospect
+cd ~/.claude/plugins/cc-retrospect && uv pip install -e .  # or pip install -e .
+```
+
+Hooks are auto-discovered by Claude Code from the plugin.
 
 ## What it does
 
