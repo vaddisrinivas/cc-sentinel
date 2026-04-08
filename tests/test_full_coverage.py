@@ -329,7 +329,7 @@ class TestHealthAnalyzerFull:
 # ---------------------------------------------------------------------------
 
 class TestWasteAnalyzerFull:
-    def test_model_mismatch_not_flagged_when_complex_tools_used(self):
+    def test_opus_on_simple_not_flagged_when_complex_tools(self):
         """Opus session with Agent/WebSearch should NOT get mismatch warning."""
         from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(
@@ -342,7 +342,7 @@ class TestWasteAnalyzerFull:
         mismatch = [d for d in descs if "simple tasks" in d.lower()]
         assert len(mismatch) == 0
 
-    def test_model_mismatch_not_flagged_when_cost_below_threshold(self):
+    def test_opus_on_simple_not_flagged_when_cost_below(self):
         """Opus session under $50 cost doesn't trigger mismatch."""
         from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(
@@ -354,8 +354,8 @@ class TestWasteAnalyzerFull:
         descs = [r.description for r in result.recommendations]
         assert not any("simple tasks" in d.lower() for d in descs)
 
-    def test_mega_prompt_threshold_not_crossed(self):
-        """<= 5 mega prompts produces no recommendation."""
+    def test_oversized_prompt_threshold_not_crossed(self):
+        """<= 5 oversized prompts produces no recommendation."""
         from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(mega_prompt_count=3)]
         result = WasteAnalyzer().analyze(sessions, default_config())

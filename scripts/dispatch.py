@@ -31,10 +31,10 @@ from cc_retrospect.core import (
     run_cost, run_habits, run_health, run_tips,
     run_report, run_compare, run_waste, run_hints,
     run_savings, run_model_efficiency, run_digest,
-    run_status, run_export, run_trends,
+    run_status, run_export, run_trends, run_learn,
     run_stop_hook, run_session_start_hook,
     run_pre_tool_use, run_post_tool_use,
-    run_pre_compact, run_post_compact,
+    run_pre_compact, run_post_compact, run_user_prompt,
 )
 
 _DISPATCH = {
@@ -45,6 +45,7 @@ _DISPATCH = {
     "post_tool_use": run_post_tool_use,
     "pre_compact": run_pre_compact,
     "post_compact": run_post_compact,
+    "user_prompt": run_user_prompt,
     # Commands (no stdin)
     "cost": run_cost,
     "habits": run_habits,
@@ -60,9 +61,10 @@ _DISPATCH = {
     "status": run_status,
     "export": run_export,
     "trends": run_trends,
+    "learn": run_learn,
 }
 
-_HOOKS = {"stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use", "pre_compact", "post_compact"}
+_HOOKS = {"stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use", "pre_compact", "post_compact", "user_prompt"}
 
 
 def _read_payload() -> dict:

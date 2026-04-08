@@ -55,7 +55,7 @@ class TestWasteAnalyzer:
         descriptions = [r.description for r in result.recommendations]
         assert any("github" in d.lower() or "gh" in d.lower() for d in descriptions)
 
-    def test_detects_tool_chains(self):
+    def test_detects_repetitive_chains(self):
         from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(tool_chains=[("Bash", 12), ("Read", 8)])]
         analyzer = WasteAnalyzer()
@@ -63,7 +63,7 @@ class TestWasteAnalyzer:
         descriptions = [r.description for r in result.recommendations]
         assert any("chain" in d.lower() or "consecutive" in d.lower() for d in descriptions)
 
-    def test_detects_mega_prompts(self):
+    def test_detects_oversized_prompts(self):
         from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(mega_prompt_count=15)]
         analyzer = WasteAnalyzer()
@@ -79,7 +79,7 @@ class TestWasteAnalyzer:
         # Might still have some recommendations but shouldn't have critical waste
         assert result is not None
 
-    def test_detects_model_mismatch(self):
+    def test_detects_opus_on_simple(self):
         """Simple sessions using Opus should suggest Sonnet."""
         from cc_retrospect.core import WasteAnalyzer, default_config
         sessions = [_make_summary(

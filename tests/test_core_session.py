@@ -56,7 +56,7 @@ class TestAnalyzeSession:
         assert "ugh" in summary.frustration_words
         assert "again" in summary.frustration_words
 
-    def test_mega_prompt_detection(self):
+    def test_oversized_prompt_detection(self):
         from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
@@ -79,7 +79,7 @@ class TestAnalyzeSession:
         )
         assert summary.subagent_count >= 1
 
-    def test_tool_chain_detection(self):
+    def test_repetitive_chain_detection(self):
         from cc_retrospect.core import analyze_session, default_config
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()

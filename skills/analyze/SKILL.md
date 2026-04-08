@@ -73,7 +73,7 @@ Combine precision numbers with behavioral insights into a single markdown report
 4. **Savings table** — per-habit with $/month, ranked by impact
 5. **Habits** — peak hours, tools, session patterns
 6. **Health signals** — long sessions, subagent overuse, cost velocity
-7. **Waste signals** — WebFetch→GitHub, chains, mega prompts, model mismatch
+7. **Waste signals** — WebFetch→GitHub, chains, oversized prompts, wrong model choice
 8. **This week vs last week** — trend comparison
 9. **Plan mode opportunities** — where /plan would have saved iterations
 10. **Volatile hotspots** — most-churned files/projects

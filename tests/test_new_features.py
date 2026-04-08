@@ -99,7 +99,7 @@ class TestSavingsAnalyzer:
         descs = [r.description.lower() for r in result.recommendations]
         assert any("gh" in d or "webfetch" in d for d in descs)
 
-    def test_mega_prompt_savings(self):
+    def test_oversized_prompt_savings(self):
         from cc_retrospect.core import SavingsAnalyzer, default_config
         sessions = [_make_summary(mega_prompt_count=20, start_ts="2026-04-01T10:00:00Z"),
                     _make_summary(session_id="s2", mega_prompt_count=15, start_ts="2026-04-05T10:00:00Z")]
@@ -467,3 +467,264 @@ class TestShouldShowDailyDigest:
         from cc_retrospect.core import _should_show_daily_digest
         (config.data_dir / "state.json").write_text(json.dumps({}))
         assert _should_show_daily_digest(config) is False
+
+
+# ---------------------------------------------------------------------------
+# run_user_prompt — oversized prompt interception
+# ---------------------------------------------------------------------------
+
+class TestRunUserPrompt:
+    def test_short_prompt_no_hint(self, config, capsys):
+        from cc_retrospect.core import run_user_prompt, _init_live_state
+        _init_live_state(config)
+        run_user_prompt({"prompt": "fix the bug"}, config=config)
+        assert capsys.readouterr().out == ""
+
+    def test_mega_paste_detected(self, config, capsys):
+        from cc_retrospect.core import run_user_prompt, _init_live_state
+        _init_live_state(config)
+        # Lots of newlines = paste
+        prompt = "line\n" * 600
+        run_user_prompt({"prompt": prompt}, config=config)
+        out = capsys.readouterr().out
+        assert "paste" in out.lower() or "file" in out.lower()
+
+    def test_very_long_prompt_detected(self, config, capsys):
+        from cc_retrospect.core import run_user_prompt, _init_live_state
+        _init_live_state(config)
+        # Long but low newline density
+        prompt = "x" * 4000
+        run_user_prompt({"prompt": prompt}, config=config)
+        out = capsys.readouterr().out
+        assert "long" in out.lower() or "file" in out.lower()
+
+    def test_tracks_message_count(self, config):
+        from cc_retrospect.core import run_user_prompt, _init_live_state, _load_live_state
+        _init_live_state(config)
+        run_user_prompt({"prompt": "hello"}, config=config)
+        run_user_prompt({"prompt": "world"}, config=config)
+        live = _load_live_state(config)
+        assert live.message_count == 2
+
+    def test_tracks_mega_count(self, config):
+        from cc_retrospect.core import run_user_prompt, _init_live_state, _load_live_state
+        _init_live_state(config)
+        run_user_prompt({"prompt": "x" * 2000}, config=config)
+        live = _load_live_state(config)
+        assert live.mega_prompt_count == 1
+
+    def test_non_string_prompt_handled(self, config):
+        from cc_retrospect.core import run_user_prompt, _init_live_state
+        _init_live_state(config)
+        rc = run_user_prompt({"prompt": 12345}, config=config)
+        assert rc == 0
+
+    def test_hint_suppressed_when_off(self, config, capsys):
+        from cc_retrospect.core import run_user_prompt, _init_live_state
+        config.hints.user_prompt = False
+        _init_live_state(config)
+        run_user_prompt({"prompt": "line\n" * 600}, config=config)
+        assert capsys.readouterr().out == ""
+
+
+# ---------------------------------------------------------------------------
+# run_learn, generate_style, generate_learnings, analyze_user_messages
+# ---------------------------------------------------------------------------
+
+class TestUserProfile:
+    def test_analyze_empty_data(self, tmp_path):
+        from cc_retrospect.core import analyze_user_messages, Config
+        data_dir = tmp_path / ".cc-retrospect"
+        data_dir.mkdir()
+        claude_dir = tmp_path / ".claude"
+        (claude_dir / "projects").mkdir(parents=True)
+        cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
+        profile = analyze_user_messages(cfg)
+        assert profile.total_messages == 0
+        assert profile.median_length == 0
+
+    def test_analyze_with_fixture(self, tmp_path):
+        from cc_retrospect.core import analyze_user_messages, Config
+        data_dir = tmp_path / ".cc-retrospect"
+        data_dir.mkdir()
+        claude_dir = tmp_path / ".claude"
+        proj = claude_dir / "projects" / "testproj"
+        proj.mkdir(parents=True)
+        # Write some user + assistant messages
+        entries = [
+            {"type": "user", "message": {"content": "fix the bug"}, "timestamp": "2026-04-05T10:00:00Z", "sessionId": "s1"},
+            {"type": "assistant", "message": {"model": "claude-opus-4-6", "content": [], "usage": {"input_tokens": 100, "output_tokens": 50}}, "timestamp": "2026-04-05T10:00:05Z", "sessionId": "s1"},
+            {"type": "user", "message": {"content": "no thats wrong"}, "timestamp": "2026-04-05T10:01:00Z", "sessionId": "s1"},
+            {"type": "assistant", "message": {"model": "claude-opus-4-6", "content": [], "usage": {"input_tokens": 100, "output_tokens": 50}}, "timestamp": "2026-04-05T10:01:05Z", "sessionId": "s1"},
+            {"type": "user", "message": {"content": "thanks"}, "timestamp": "2026-04-05T10:02:00Z", "sessionId": "s1"},
+        ]
+        (proj / "s1.jsonl").write_text("\n".join(json.dumps(e) for e in entries))
+        cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
+        profile = analyze_user_messages(cfg)
+        assert profile.total_messages == 3
+        assert profile.correction_count >= 1
+        assert profile.gratitude_rate > 0
+
+    def test_skips_subagent_sessions(self, tmp_path):
+        from cc_retrospect.core import analyze_user_messages, Config
+        data_dir = tmp_path / ".cc-retrospect"
+        data_dir.mkdir()
+        claude_dir = tmp_path / ".claude"
+        proj = claude_dir / "projects" / "testproj" / "subdir" / "subagents"
+        proj.mkdir(parents=True)
+        entries = [
+            {"type": "user", "message": {"content": "should be skipped"}, "timestamp": "2026-04-05T10:00:00Z", "sessionId": "s1"},
+        ]
+        (proj / "s1.jsonl").write_text("\n".join(json.dumps(e) for e in entries))
+        cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
+        profile = analyze_user_messages(cfg)
+        assert profile.total_messages == 0
+
+
+class TestGenerateStyle:
+    def test_terse_user(self):
+        from cc_retrospect.core import generate_style, UserProfile
+        profile = UserProfile(median_length=50, correction_count=15,
+                              mega_prompt_pct=20, frustration_rate=5,
+                              approval_signals={"do it": 10, "yes": 5})
+        style = generate_style(profile)
+        assert "concise" in style.lower()
+        assert "no X" in style
+        assert "do it" in style
+        assert "paste" in style.lower()
+
+    def test_verbose_user(self):
+        from cc_retrospect.core import generate_style, UserProfile
+        profile = UserProfile(median_length=500)
+        style = generate_style(profile)
+        assert "detail" in style.lower()
+
+    def test_always_has_compression_section(self):
+        from cc_retrospect.core import generate_style, UserProfile
+        style = generate_style(UserProfile())
+        assert "Output Compression" in style
+
+
+class TestGenerateLearnings:
+    def test_basic_output(self):
+        from cc_retrospect.core import generate_learnings, UserProfile
+        profile = UserProfile(
+            total_messages=100, median_length=80,
+            single_word_pct=15, correction_count=10,
+            frustration_rate=5, frustration_words={"ugh": 3},
+            approval_signals={"yes": 10},
+            peak_hours=[10, 14, 22],
+            avg_session_duration=45, avg_session_messages=80,
+            top_cost_driver="model_choice", cache_hit_rate=92.5,
+            top_openers=[("check", 20), ("fix", 15)],
+            tool_after_frustration={"Read": 5},
+        )
+        learnings = generate_learnings(profile)
+        assert "Communication Style" in learnings
+        assert "Correction Pattern" in learnings
+        assert "Approval Signals" in learnings
+        assert "Frustration Response" in learnings
+        assert "Work Patterns" in learnings
+        assert "Cost Awareness" in learnings
+        assert "model choice" in learnings.lower()
+
+    def test_empty_profile(self):
+        from cc_retrospect.core import generate_learnings, UserProfile
+        learnings = generate_learnings(UserProfile())
+        assert "Session Learnings" in learnings
+
+
+class TestRunLearn:
+    def test_generates_files(self, tmp_path, capsys):
+        from cc_retrospect.core import run_learn, Config
+        data_dir = tmp_path / ".cc-retrospect"
+        data_dir.mkdir()
+        claude_dir = tmp_path / ".claude"
+        proj = claude_dir / "projects" / "testproj"
+        proj.mkdir(parents=True)
+        entries = [
+            {"type": "user", "message": {"content": "fix this"}, "timestamp": "2026-04-05T10:00:00Z", "sessionId": "s1"},
+            {"type": "assistant", "message": {"model": "claude-opus-4-6", "content": [], "usage": {"input_tokens": 100, "output_tokens": 50}}, "timestamp": "2026-04-05T10:00:05Z", "sessionId": "s1"},
+        ]
+        (proj / "s1.jsonl").write_text("\n".join(json.dumps(e) for e in entries))
+        cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
+        rc = run_learn(config=cfg)
+        assert rc == 0
+        assert (data_dir / "STYLE.md").exists()
+        assert (data_dir / "LEARNINGS.md").exists()
+        out = capsys.readouterr().out
+        assert "User Profile" in out
+        assert "STYLE.md" in out
+
+
+# ---------------------------------------------------------------------------
+# Waste flags on stop hook
+# ---------------------------------------------------------------------------
+
+class TestWasteFlagsOnStop:
+    def _make_claude_dir(self, tmp_path):
+        claude_dir = tmp_path / ".claude"
+        proj_dir = claude_dir / "projects" / "-Users-test-Projects-myapp"
+        proj_dir.mkdir(parents=True)
+        dest = proj_dir / "sess-001.jsonl"
+        dest.write_bytes((FIXTURES / "sample_session.jsonl").read_bytes())
+        return claude_dir
+
+    def test_waste_flags_saved_in_state(self, tmp_path):
+        from cc_retrospect.core import Config, run_stop_hook
+        claude_dir = self._make_claude_dir(tmp_path)
+        data_dir = tmp_path / ".cc-retrospect"
+        data_dir.mkdir()
+        cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
+        cfg.hints.waste_on_stop = True
+        run_stop_hook({"session_id": "sess-001", "cwd": "/test"}, config=cfg)
+        state = json.loads((data_dir / "state.json").read_text())
+        # sample_session.jsonl has github.com webfetch — should produce waste flags
+        if "last_waste_flags" in state:
+            assert any("GitHub" in f or "WebFetch" in f for f in state["last_waste_flags"])
+
+
+# ---------------------------------------------------------------------------
+# Daily health check in session_start
+# ---------------------------------------------------------------------------
+
+class TestDailyHealthCheck:
+    def test_health_check_fires_once_per_day(self, config, capsys):
+        from cc_retrospect.core import run_session_start_hook
+        config.hints.session_start = True
+        config.hints.daily_health = True
+        state = {
+            "last_session_cost": 5.0,
+            "last_session_duration_minutes": 30,
+            "last_message_count": 20,
+            "last_frustration_count": 0,
+            "last_subagent_count": 0,
+            "last_ts": datetime.now(timezone.utc).isoformat(),
+        }
+        (config.data_dir / "state.json").write_text(json.dumps(state))
+        (config.claude_dir / "projects").mkdir(parents=True, exist_ok=True)
+        run_session_start_hook({"cwd": "/test"}, config=config)
+        # Should have set last_health_date
+        new_state = json.loads((config.data_dir / "state.json").read_text())
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        assert new_state.get("last_health_date") == today
+
+    def test_health_skips_if_already_done_today(self, config, capsys):
+        from cc_retrospect.core import run_session_start_hook
+        config.hints.session_start = True
+        config.hints.daily_health = True
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        state = {
+            "last_session_cost": 5.0,
+            "last_session_duration_minutes": 30,
+            "last_message_count": 20,
+            "last_frustration_count": 0,
+            "last_subagent_count": 0,
+            "last_ts": datetime.now(timezone.utc).isoformat(),
+            "last_health_date": today,
+        }
+        (config.data_dir / "state.json").write_text(json.dumps(state))
+        run_session_start_hook({"cwd": "/test"}, config=config)
+        # Health section should not appear since already done today
+        out = capsys.readouterr().out
+        assert "Health:" not in out
