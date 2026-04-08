@@ -500,15 +500,15 @@ class TestConfigOverrideChain:
     def test_config_file_overrides_default_pricing(self, tmp_path):
         from cc_retrospect.core import load_config
         cfg_file = tmp_path / "config.env"
-        cfg_file.write_text("CC_ANALYZE_PRICING__SONNET__INPUT_PER_MTOK=99.0\n")
+        cfg_file.write_text("PRICING__SONNET__INPUT_PER_MTOK=99.0\n")
         cfg = load_config(cfg_file)
         assert cfg.pricing.sonnet.input_per_mtok == 99.0
 
     def test_env_var_overrides_file(self, tmp_path):
         from cc_retrospect.core import load_config
         cfg_file = tmp_path / "config.env"
-        cfg_file.write_text("CC_ANALYZE_PRICING__SONNET__INPUT_PER_MTOK=50.0\n")
-        with patch.dict(os.environ, {"CC_ANALYZE_PRICING__SONNET__INPUT_PER_MTOK": "77.0"}):
+        cfg_file.write_text("PRICING__SONNET__INPUT_PER_MTOK=50.0\n")
+        with patch.dict(os.environ, {"PRICING__SONNET__INPUT_PER_MTOK": "77.0"}):
             cfg = load_config(cfg_file)
         assert cfg.pricing.sonnet.input_per_mtok == 77.0
 
@@ -516,7 +516,7 @@ class TestConfigOverrideChain:
         from cc_retrospect.core import load_config, compute_cost, UsageRecord
         cfg_file = tmp_path / "config.env"
         # Use a very distinctive rate so we can verify
-        cfg_file.write_text("CC_ANALYZE_PRICING__OPUS__INPUT_PER_MTOK=100.0\n")
+        cfg_file.write_text("PRICING__OPUS__INPUT_PER_MTOK=100.0\n")
         cfg = load_config(cfg_file)
         rec = UsageRecord(
             timestamp="", session_id="", project="", model="claude-opus-4-6",
@@ -531,7 +531,7 @@ class TestConfigOverrideChain:
         from cc_retrospect.core import load_config, HealthAnalyzer
         cfg_file = tmp_path / "config.env"
         # Set very low threshold so a 10-minute session triggers warning
-        cfg_file.write_text("CC_ANALYZE_THRESHOLDS__LONG_SESSION_MINUTES=5\n")
+        cfg_file.write_text("THRESHOLDS__LONG_SESSION_MINUTES=5\n")
         cfg = load_config(cfg_file)
 
         from tests.test_core_detectors import _make_summary
@@ -645,18 +645,18 @@ class TestSessionSummaryRoundtrip:
     def test_full_roundtrip_via_file(self, tmp_path):
         from cc_retrospect.core import (
             analyze_session, default_config,
-            session_summary_to_dict, session_summary_from_dict,
+            SessionSummary,
         )
         summary = analyze_session(FIXTURES / "sample_session.jsonl", "myapp", default_config())
 
         cache = tmp_path / "sessions.jsonl"
         with open(cache, "w") as f:
-            f.write(json.dumps(session_summary_to_dict(summary)) + "\n")
+            f.write(json.dumps(summary.model_dump()) + "\n")
 
         from cc_retrospect.core import iter_jsonl
         entries = list(iter_jsonl(cache))
         assert len(entries) == 1
-        restored = session_summary_from_dict(entries[0])
+        restored = SessionSummary.model_validate(entries[0])
 
         assert restored.session_id == summary.session_id
         assert restored.total_cost == summary.total_cost
@@ -667,11 +667,11 @@ class TestSessionSummaryRoundtrip:
     def test_high_cost_session_roundtrip(self, tmp_path):
         from cc_retrospect.core import (
             analyze_session, default_config,
-            session_summary_to_dict, session_summary_from_dict,
+            SessionSummary,
         )
         summary = analyze_session(FIXTURES / "high_cost_session.jsonl", "bigapp", default_config())
-        d = session_summary_to_dict(summary)
-        restored = session_summary_from_dict(d)
+        d = summary.model_dump()
+        restored = SessionSummary.model_validate(d)
         assert restored.subagent_count == summary.subagent_count
         assert restored.frustration_count == summary.frustration_count
         assert abs(restored.total_cost - summary.total_cost) < 0.001
@@ -691,7 +691,7 @@ class TestDispatchRouting:
             "stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use",
             "pre_compact", "post_compact",
             "cost", "habits", "health", "tips", "report", "compare", "waste", "hints",
-            "savings", "model", "digest",
+            "savings", "model", "digest", "status", "export", "trends",
         }
         assert expected == set(dispatch._DISPATCH.keys())
 

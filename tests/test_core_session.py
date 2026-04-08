@@ -128,12 +128,12 @@ class TestSessionSummarySerialize:
     """SessionSummary should be serializable to/from JSON for sessions.jsonl caching."""
 
     def test_roundtrip(self):
-        from cc_retrospect.core import analyze_session, default_config, session_summary_to_dict, session_summary_from_dict
+        from cc_retrospect.core import analyze_session, default_config, SessionSummary
         summary = analyze_session(
             FIXTURES / "sample_session.jsonl", "myapp", default_config()
         )
-        d = session_summary_to_dict(summary)
-        restored = session_summary_from_dict(d)
+        d = summary.model_dump()
+        restored = SessionSummary.model_validate(d)
         assert restored.session_id == summary.session_id
         assert restored.total_cost == summary.total_cost
         assert restored.tool_counts == summary.tool_counts

@@ -62,9 +62,10 @@ class HintsConfig(BaseModel):
 class Config(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(Path.home() / ".cc-retrospect" / "config.env"),
-        env_prefix="CC_ANALYZE_",
+        env_prefix="",
         env_nested_delimiter="__",
         env_ignore_empty=True,
+        extra="ignore",
     )
     pricing: ModelPricing = ModelPricing()
     thresholds: ThresholdsConfig = ThresholdsConfig()
@@ -729,52 +730,6 @@ def get_analyzers(config: Config) -> list:
     return analyzers
 
 
-# --- Compat shims ---
-
-def session_summary_to_dict(s: SessionSummary) -> dict:
-    return s.model_dump()
-
-
-def session_summary_from_dict(d: dict) -> SessionSummary:
-    return SessionSummary.model_validate(d)
-
-
-_APPLY_MAP = {
-    "PRICING_OPUS_INPUT_PER_MTOK": ("pricing.opus", "input_per_mtok", float),
-    "PRICING_OPUS_OUTPUT_PER_MTOK": ("pricing.opus", "output_per_mtok", float),
-    "PRICING_OPUS_CACHE_CREATE_PER_MTOK": ("pricing.opus", "cache_create_per_mtok", float),
-    "PRICING_OPUS_CACHE_READ_PER_MTOK": ("pricing.opus", "cache_read_per_mtok", float),
-    "PRICING_SONNET_INPUT_PER_MTOK": ("pricing.sonnet", "input_per_mtok", float),
-    "PRICING_SONNET_OUTPUT_PER_MTOK": ("pricing.sonnet", "output_per_mtok", float),
-    "PRICING_HAIKU_INPUT_PER_MTOK": ("pricing.haiku", "input_per_mtok", float),
-    "PRICING_HAIKU_OUTPUT_PER_MTOK": ("pricing.haiku", "output_per_mtok", float),
-    "THRESHOLD_LONG_SESSION_MINUTES": ("thresholds", "long_session_minutes", int),
-    "THRESHOLD_LONG_SESSION_MESSAGES": ("thresholds", "long_session_messages", int),
-    "THRESHOLD_MEGA_PROMPT_CHARS": ("thresholds", "mega_prompt_chars", int),
-    "THRESHOLD_MAX_SUBAGENTS": ("thresholds", "max_subagents_per_session", int),
-    "THRESHOLD_DAILY_COST_WARNING": ("thresholds", "daily_cost_warning", float),
-}
-
-
-def _apply_config(cfg: Config, key: str, val: str) -> None:
-    key = key.upper()
-    try:
-        if key == "WASTE_WEBFETCH_DOMAINS":
-            cfg.thresholds.waste_webfetch_domains = [d.strip() for d in val.split(",") if d.strip()]
-        elif key.startswith("HINTS_"):
-            field = key[6:].lower()
-            is_positive = val.lower() in ("1", "true", "yes")
-            is_negative = val.lower() in ("0", "false", "no")
-            setattr(cfg.hints, field, (is_positive if field == "session_start" else not is_negative))
-        elif key in _APPLY_MAP:
-            path, attr, converter = _APPLY_MAP[key]
-            obj = cfg
-            for part in path.split("."): obj = getattr(obj, part)
-            setattr(obj, attr, converter(val))
-    except (ValueError, TypeError, AttributeError) as e:
-        logger.debug("Ignoring bad config value %s=%r: %s", key, val, e)
-
-
 # --- Session cache loader ---
 
 def load_all_sessions(config: Config, project_filter: str | None = None) -> list[SessionSummary]:
@@ -938,16 +893,144 @@ def run_hints(payload: dict = {}, *, config: Config | None = None) -> int:
     config = config or load_config()
     lines = [
         "## cc-retrospect Hint Settings", "",
-        f"  session_start   {'on ' if config.hints.session_start else 'off'}  — summary at session start  (CC_ANALYZE_HINTS__SESSION_START)",
-        f"  pre_tool        {'on ' if config.hints.pre_tool else 'off'}  — hints before tool calls     (CC_ANALYZE_HINTS__PRE_TOOL)",
-        f"  post_tool       {'on ' if config.hints.post_tool else 'off'}  — compaction + subagent nudge (CC_ANALYZE_HINTS__POST_TOOL)",
+        f"  session_start   {'on ' if config.hints.session_start else 'off'}  — summary at session start  (HINTS__SESSION_START)",
+        f"  pre_tool        {'on ' if config.hints.pre_tool else 'off'}  — hints before tool calls     (HINTS__PRE_TOOL)",
+        f"  post_tool       {'on ' if config.hints.post_tool else 'off'}  — compaction + subagent nudge (HINTS__POST_TOOL)",
         "", "To change, add to ~/.cc-retrospect/config.env:",
-        "  CC_ANALYZE_HINTS__SESSION_START=true",
-        "  CC_ANALYZE_HINTS__PRE_TOOL=true",
-        "  CC_ANALYZE_HINTS__POST_TOOL=true",
+        "  HINTS__SESSION_START=true",
+        "  HINTS__PRE_TOOL=true",
+        "  HINTS__POST_TOOL=true",
     ]
     print("\n".join(lines))
     return 0
+
+
+# --- Status, export, trends ---
+
+def run_status(payload: dict = {}, *, config: Config | None = None) -> int:
+    """Plugin health check — verify install, hooks, data, deps."""
+    config = config or load_config()
+    lines = ["## cc-retrospect Status", ""]
+    # Data dir
+    data_exists = config.data_dir.exists()
+    lines.append(f"Data directory: {config.data_dir} ({'exists' if data_exists else 'MISSING'})")
+    # Session count
+    cache_path = config.data_dir / "sessions.jsonl"
+    session_count = sum(1 for _ in iter_jsonl(cache_path)) if cache_path.exists() else 0
+    lines.append(f"Cached sessions: {session_count}")
+    # Config file
+    config_path = config.data_dir / "config.env"
+    lines.append(f"Config file: {config_path} ({'found' if config_path.exists() else 'not found (using defaults)'})")
+    # Compactions
+    comp_path = config.data_dir / "compactions.jsonl"
+    comp_count = sum(1 for _ in iter_jsonl(comp_path)) if comp_path.exists() else 0
+    lines.append(f"Compaction events logged: {comp_count}")
+    # Trends
+    trends_path = config.data_dir / "trends.jsonl"
+    trend_count = sum(1 for _ in iter_jsonl(trends_path)) if trends_path.exists() else 0
+    lines.append(f"Weekly trend snapshots: {trend_count}")
+    # Last session
+    state_path = config.data_dir / "state.json"
+    if state_path.exists():
+        try:
+            state = json.loads(state_path.read_text())
+            lines.append(f"Last session: {state.get('last_ts', 'unknown')[:16]} ({display_project(state.get('last_project', '?'))})")
+        except (json.JSONDecodeError, OSError): pass
+    # Deps
+    try:
+        import pydantic; lines.append(f"pydantic: {pydantic.__version__}")
+    except ImportError: lines.append("pydantic: NOT INSTALLED")
+    try:
+        import pydantic_settings; lines.append(f"pydantic-settings: {pydantic_settings.__version__}")
+    except ImportError: lines.append("pydantic-settings: NOT INSTALLED")
+    lines.append("")
+    print("\n".join(lines))
+    return 0
+
+
+def run_export(payload: dict = {}, *, config: Config | None = None) -> int:
+    """Export all session data as JSON to stdout."""
+    config = config or load_config()
+    sessions = load_all_sessions(config)
+    print(json.dumps([s.model_dump() for s in sessions], default=str))
+    return 0
+
+
+class TrendAnalyzer:
+    name = "trends"
+    description = "Weekly trend tracking — are you improving over time?"
+
+    def analyze(self, sessions: list[SessionSummary], config: Config) -> AnalysisResult:
+        trends_path = config.data_dir / "trends.jsonl"
+        weeks: list[dict] = list(iter_jsonl(trends_path)) if trends_path.exists() else []
+        if not weeks:
+            return AnalysisResult(title="Trends", recommendations=[
+                Recommendation(severity="info", description="No trend data yet. Trends are recorded weekly via the stop hook.")])
+        rows = []
+        prev: dict | None = None
+        for w in sorted(weeks, key=lambda x: x.get("week", ""))[-8:]:
+            wk = w.get("week", "?")
+            cost = w.get("cost", 0)
+            sess = w.get("sessions", 0)
+            eff = w.get("model_efficiency", 0)
+            delta = ""
+            if prev:
+                pc = prev.get("cost", 0)
+                if pc > 0: delta = f" ({'↓' if cost < pc else '↑'}{abs(cost - pc) / pc * 100:.0f}%)"
+            rows.append((wk, f"{_fmt_cost(cost)}, {sess} sessions, {eff}% efficiency{delta}"))
+            prev = w
+        recs = []
+        if len(weeks) >= 2:
+            latest, prior = weeks[-1], weeks[-2]
+            if latest.get("cost", 0) < prior.get("cost", 0) * 0.8:
+                recs.append(Recommendation(severity="info", description="Spending trending down — good progress."))
+            elif latest.get("cost", 0) > prior.get("cost", 0) * 1.3:
+                recs.append(Recommendation(severity="warning", description="Spending trending up. Check /savings for actionable cuts."))
+        return AnalysisResult(title="Weekly Trends", sections=[Section(header="Last 8 Weeks", rows=rows)], recommendations=recs)
+
+
+def run_trends(payload: dict = {}, *, config: Config | None = None) -> int:
+    return _render(TrendAnalyzer, config=config)
+
+
+def _update_trends(config: Config) -> None:
+    """Append a weekly snapshot if the current week hasn't been recorded yet."""
+    now = datetime.now(timezone.utc)
+    current_week = now.strftime("%G-W%V")
+    trends_path = config.data_dir / "trends.jsonl"
+    existing_weeks = set()
+    if trends_path.exists():
+        for entry in iter_jsonl(trends_path):
+            existing_weeks.add(entry.get("week", ""))
+    if current_week in existing_weeks:
+        return
+    # Build snapshot from this week's sessions
+    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    sessions = load_all_sessions(config)
+    week_sessions = [s for s in sessions if s.start_ts and s.start_ts >= week_start.isoformat()]
+    if not week_sessions:
+        return
+    total_cost = sum(s.total_cost for s in week_sessions)
+    complex_tools = {"Agent", "EnterPlanMode", "WebSearch", "WebFetch"}
+    opus_total = sum(s.model_breakdown.get("claude-opus-4-6", 0) for s in week_sessions)
+    opus_simple = sum(s.model_breakdown.get("claude-opus-4-6", 0) for s in week_sessions
+                      if not any(t in s.tool_counts for t in complex_tools))
+    all_model_cost = sum(s.total_cost for s in week_sessions)
+    efficiency = int((1 - opus_simple / all_model_cost) * 100) if all_model_cost > 0 else 100
+    compactions = _load_compactions(config, since=week_start.isoformat()[:10])
+    snapshot = {
+        "week": current_week,
+        "cost": round(total_cost, 2),
+        "sessions": len(week_sessions),
+        "avg_duration": round(sum(s.duration_minutes for s in week_sessions) / len(week_sessions), 1),
+        "frustrations": sum(s.frustration_count for s in week_sessions),
+        "subagents": sum(s.subagent_count for s in week_sessions),
+        "model_efficiency": efficiency,
+        "compactions": len(compactions),
+    }
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    with open(trends_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(snapshot) + "\n")
 
 
 # --- Hook entry points ---
@@ -978,7 +1061,20 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
         "last_message_count": summary.message_count, "last_frustration_count": summary.frustration_count,
         "last_subagent_count": summary.subagent_count, "last_ts": datetime.now(timezone.utc).isoformat(),
     })
+    # Budget tracking: accumulate today's cost
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if state.get("today_date") == today:
+        state["today_cost"] = state.get("today_cost", 0) + summary.total_cost
+    else:
+        state["today_date"] = today
+        state["today_cost"] = summary.total_cost
     state_path.write_text(json.dumps(state, indent=2))
+    # Budget alert
+    if state["today_cost"] > config.thresholds.daily_cost_warning:
+        print(f"[cc-retrospect] Budget alert: {_fmt_cost(state['today_cost'])} spent today (threshold: {_fmt_cost(config.thresholds.daily_cost_warning)}).", file=sys.stderr)
+    # Update weekly trends
+    try: _update_trends(config)
+    except Exception as e: logger.debug("Trend update failed: %s", e)
     return 0
 
 
@@ -987,6 +1083,21 @@ def run_session_start_hook(payload: dict, *, config: Config | None = None) -> in
     cwd = payload.get("cwd", "")
     if not cwd: return 0
     state_path = config.data_dir / "state.json"
+    # First-run onboarding
+    if not state_path.exists():
+        try:
+            sessions = load_all_sessions(config)
+            if sessions:
+                total_cost = sum(s.total_cost for s in sessions)
+                print(f"[cc-retrospect] Welcome! Found {len(sessions)} sessions ({_fmt_cost(total_cost)}). Run /cc-retrospect:analyze for a full report.")
+            else:
+                print("[cc-retrospect] Welcome! No session data yet. Hooks will start tracking automatically.")
+            config.data_dir.mkdir(parents=True, exist_ok=True)
+            state_path.write_text(json.dumps({"first_run": datetime.now(timezone.utc).isoformat()}))
+        except Exception as e:
+            logger.debug("First-run onboarding failed: %s", e)
+        _init_live_state(config)
+        return 0
     if not state_path.exists(): return 0
     try: state = json.loads(state_path.read_text())
     except (json.JSONDecodeError, OSError): return 0

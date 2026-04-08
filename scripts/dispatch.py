@@ -31,6 +31,7 @@ from cc_retrospect.core import (
     run_cost, run_habits, run_health, run_tips,
     run_report, run_compare, run_waste, run_hints,
     run_savings, run_model_efficiency, run_digest,
+    run_status, run_export, run_trends,
     run_stop_hook, run_session_start_hook,
     run_pre_tool_use, run_post_tool_use,
     run_pre_compact, run_post_compact,
@@ -56,6 +57,9 @@ _DISPATCH = {
     "savings": run_savings,
     "model": run_model_efficiency,
     "digest": run_digest,
+    "status": run_status,
+    "export": run_export,
+    "trends": run_trends,
 }
 
 _HOOKS = {"stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use", "pre_compact", "post_compact"}

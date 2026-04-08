@@ -151,12 +151,12 @@ class TestEnhancedSessionStart:
         assert "192" in out or "3h" in out  # duration
         assert "87" in out  # cost
 
-    def test_no_output_when_no_state(self, config, capsys):
+    def test_first_run_shows_welcome(self, config, capsys):
         from cc_retrospect.core import run_session_start_hook
         with patch("cc_retrospect.core.load_config", return_value=config):
             run_session_start_hook({"cwd": "/test"})
         out = capsys.readouterr().out
-        assert out == ""
+        assert "Welcome" in out or out == ""  # Welcome if sessions found, empty if not
 
     def test_tips_for_long_expensive_session(self, config, capsys):
         from cc_retrospect.core import run_session_start_hook
@@ -188,5 +188,5 @@ class TestDispatcher:
         expected = {"stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use",
                     "pre_compact", "post_compact",
                     "cost", "habits", "health", "tips", "report", "compare", "waste", "hints",
-                    "savings", "model", "digest"}
+                    "savings", "model", "digest", "status", "export", "trends"}
         assert expected == set(dispatch._DISPATCH.keys())

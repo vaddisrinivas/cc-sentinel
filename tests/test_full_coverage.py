@@ -76,14 +76,14 @@ class TestLoadConfig:
     def test_reads_from_file(self, tmp_path):
         from cc_retrospect.core import load_config
         cfg_file = tmp_path / "config.env"
-        cfg_file.write_text("CC_ANALYZE_PRICING__OPUS__INPUT_PER_MTOK=99.0\n# comment\n\nNO_EQUALS\n")
+        cfg_file.write_text("PRICING__OPUS__INPUT_PER_MTOK=99.0\n# comment\n\nNO_EQUALS\n")
         cfg = load_config(cfg_file)
         assert cfg.pricing.opus.input_per_mtok == 99.0
 
     def test_env_var_override(self, tmp_path):
         from cc_retrospect.core import load_config
         env = {k: v for k, v in os.environ.items()}
-        env["CC_ANALYZE_PRICING__OPUS__INPUT_PER_MTOK"] = "42.0"
+        env["PRICING__OPUS__INPUT_PER_MTOK"] = "42.0"
         with patch.dict(os.environ, env, clear=True):
             cfg = load_config(tmp_path / "nonexistent.env")
         assert cfg.pricing.opus.input_per_mtok == 42.0
@@ -92,79 +92,6 @@ class TestLoadConfig:
         from cc_retrospect.core import load_config, default_config
         cfg = load_config(tmp_path / "nonexistent.env")
         assert cfg.pricing.opus.input_per_mtok == default_config().pricing.opus.input_per_mtok
-
-
-# ---------------------------------------------------------------------------
-# _apply_config — all keys + bad value path
-# ---------------------------------------------------------------------------
-
-class TestApplyConfig:
-    def _cfg(self):
-        from cc_retrospect.core import Config
-        return Config()
-
-    def test_all_pricing_keys(self):
-        from cc_retrospect.core import _apply_config
-        cfg = self._cfg()
-        _apply_config(cfg, "PRICING_OPUS_OUTPUT_PER_MTOK", "55.0")
-        assert cfg.pricing.opus.output_per_mtok == 55.0
-        _apply_config(cfg, "PRICING_OPUS_CACHE_CREATE_PER_MTOK", "10.0")
-        assert cfg.pricing.opus.cache_create_per_mtok == 10.0
-        _apply_config(cfg, "PRICING_OPUS_CACHE_READ_PER_MTOK", "2.0")
-        assert cfg.pricing.opus.cache_read_per_mtok == 2.0
-        _apply_config(cfg, "PRICING_SONNET_INPUT_PER_MTOK", "2.0")
-        assert cfg.pricing.sonnet.input_per_mtok == 2.0
-        _apply_config(cfg, "PRICING_SONNET_OUTPUT_PER_MTOK", "8.0")
-        assert cfg.pricing.sonnet.output_per_mtok == 8.0
-        _apply_config(cfg, "PRICING_HAIKU_INPUT_PER_MTOK", "0.5")
-        assert cfg.pricing.haiku.input_per_mtok == 0.5
-        _apply_config(cfg, "PRICING_HAIKU_OUTPUT_PER_MTOK", "2.0")
-        assert cfg.pricing.haiku.output_per_mtok == 2.0
-
-    def test_threshold_keys(self):
-        from cc_retrospect.core import _apply_config
-        cfg = self._cfg()
-        _apply_config(cfg, "THRESHOLD_LONG_SESSION_MINUTES", "60")
-        assert cfg.thresholds.long_session_minutes == 60
-        _apply_config(cfg, "THRESHOLD_LONG_SESSION_MESSAGES", "100")
-        assert cfg.thresholds.long_session_messages == 100
-        _apply_config(cfg, "THRESHOLD_MEGA_PROMPT_CHARS", "500")
-        assert cfg.thresholds.mega_prompt_chars == 500
-        _apply_config(cfg, "THRESHOLD_MAX_SUBAGENTS", "5")
-        assert cfg.thresholds.max_subagents_per_session == 5
-        _apply_config(cfg, "THRESHOLD_DAILY_COST_WARNING", "200.0")
-        assert cfg.thresholds.daily_cost_warning == 200.0
-
-    def test_waste_domains(self):
-        from cc_retrospect.core import _apply_config
-        cfg = self._cfg()
-        _apply_config(cfg, "WASTE_WEBFETCH_DOMAINS", "github.com,stackoverflow.com")
-        assert "stackoverflow.com" in cfg.thresholds.waste_webfetch_domains
-
-    def test_hints_keys(self):
-        from cc_retrospect.core import _apply_config
-        cfg = self._cfg()
-        _apply_config(cfg, "HINTS_SESSION_START", "true")
-        assert cfg.hints.session_start is True
-        _apply_config(cfg, "HINTS_SESSION_START", "1")
-        assert cfg.hints.session_start is True
-        _apply_config(cfg, "HINTS_SESSION_START", "false")
-        assert cfg.hints.session_start is False
-        _apply_config(cfg, "HINTS_PRE_TOOL", "false")
-        assert cfg.hints.pre_tool is False
-        _apply_config(cfg, "HINTS_PRE_TOOL", "true")
-        assert cfg.hints.pre_tool is True
-        _apply_config(cfg, "HINTS_POST_TOOL", "0")
-        assert cfg.hints.post_tool is False
-        _apply_config(cfg, "HINTS_POST_TOOL", "yes")
-        assert cfg.hints.post_tool is True
-
-    def test_bad_value_ignored(self):
-        from cc_retrospect.core import _apply_config
-        cfg = self._cfg()
-        before = cfg.pricing.opus.input_per_mtok
-        _apply_config(cfg, "PRICING_OPUS_INPUT_PER_MTOK", "not_a_number")
-        assert cfg.pricing.opus.input_per_mtok == before
 
 
 # ---------------------------------------------------------------------------

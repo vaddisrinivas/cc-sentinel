@@ -10,5 +10,6 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+cc_retrospective/
 .DS_Store
 *.log
