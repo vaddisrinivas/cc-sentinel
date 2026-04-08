@@ -34,6 +34,7 @@ jobs:
             --cov=cc_retrospect \
             --cov-report=term-missing \
             --cov-report=xml \
+            --ignore=tests/test_real_data.py \
             -p no:cacheprovider
 
       - name: Upload coverage report

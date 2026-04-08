@@ -688,6 +688,155 @@ class TestWasteFlagsOnStop:
 # Daily health check in session_start
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# run_reset
+# ---------------------------------------------------------------------------
+
+class TestRunReset:
+    def test_clears_all_files(self, config, capsys):
+        from cc_retrospect.core import run_reset
+        for name in ("sessions.jsonl", "state.json", "live_session.json", "compactions.jsonl", "trends.jsonl"):
+            (config.data_dir / name).write_text("{}\n")
+        run_reset(config=config)
+        out = capsys.readouterr().out
+        assert "Cleared" in out
+        for name in ("sessions.jsonl", "state.json", "live_session.json", "compactions.jsonl", "trends.jsonl"):
+            assert not (config.data_dir / name).exists()
+
+    def test_nothing_to_clear(self, config, capsys):
+        from cc_retrospect.core import run_reset
+        run_reset(config=config)
+        assert "Nothing to clear" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# run_config
+# ---------------------------------------------------------------------------
+
+class TestRunConfig:
+    def test_shows_pricing(self, config, capsys):
+        from cc_retrospect.core import run_config
+        run_config(config=config)
+        out = capsys.readouterr().out
+        assert "opus" in out
+        assert "sonnet" in out
+        assert "15.0" in out  # default opus input price
+
+    def test_json_output(self, config, capsys):
+        from cc_retrospect.core import run_config
+        run_config({"json": True}, config=config)
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert "pricing" in data
+        assert "thresholds" in data
+
+    def test_shows_hints(self, config, capsys):
+        from cc_retrospect.core import run_config
+        run_config(config=config)
+        out = capsys.readouterr().out
+        assert "pre_tool" in out
+        assert "session_start" in out
+
+
+# ---------------------------------------------------------------------------
+# --json, --project, --days flags
+# ---------------------------------------------------------------------------
+
+class TestCommandFlags:
+    def test_json_flag(self, config, capsys):
+        from cc_retrospect.core import run_cost
+        s = _make_summary()
+        (config.data_dir / "sessions.jsonl").write_text(s.model_dump_json() + "\n")
+        (config.claude_dir / "projects").mkdir(parents=True, exist_ok=True)
+        run_cost({"json": True}, config=config)
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert data["title"] == "Cost Analysis"
+
+    def test_project_filter(self, tmp_path, capsys):
+        from cc_retrospect.core import run_cost, Config
+        data_dir = tmp_path / ".cc-retrospect"
+        data_dir.mkdir()
+        claude_dir = tmp_path / ".claude"
+        # Create two project dirs with JSONL files
+        for proj, sid, cost in [("proj-alpha", "alpha-1", 100.0), ("proj-beta", "beta-1", 50.0)]:
+            pdir = claude_dir / "projects" / proj
+            pdir.mkdir(parents=True)
+            entry = {"type": "assistant", "message": {"model": "claude-opus-4-6", "content": [],
+                     "usage": {"input_tokens": int(cost * 1000 / 15), "output_tokens": 100}},
+                     "timestamp": "2026-04-05T10:00:00Z", "sessionId": sid}
+            (pdir / f"{sid}.jsonl").write_text(json.dumps(entry))
+        cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
+        run_cost({"project": "alpha"}, config=cfg)
+        out = capsys.readouterr().out
+        assert "alpha" in out.lower()
+        # beta should not appear
+        assert "beta" not in out.lower()
+
+    def test_days_filter(self, config, capsys):
+        from cc_retrospect.core import run_cost
+        old = _make_summary(session_id="old", start_ts="2020-01-01T10:00:00Z", total_cost=999.0)
+        recent = _make_summary(session_id="new", start_ts=datetime.now(timezone.utc).isoformat(), total_cost=5.0)
+        (config.data_dir / "sessions.jsonl").write_text(
+            old.model_dump_json() + "\n" + recent.model_dump_json() + "\n")
+        (config.claude_dir / "projects").mkdir(parents=True, exist_ok=True)
+        run_cost({"days": 7}, config=config)
+        out = capsys.readouterr().out
+        # Should only show the recent session's cost, not $999
+        assert "$999" not in out
+
+
+# ---------------------------------------------------------------------------
+# Trends backfill
+# ---------------------------------------------------------------------------
+
+class TestTrendsBackfill:
+    def test_backfill_creates_weeks(self, tmp_path, capsys):
+        from cc_retrospect.core import _backfill_trends, Config
+        data_dir = tmp_path / ".cc-retrospect"
+        data_dir.mkdir()
+        claude_dir = tmp_path / ".claude"
+        proj = claude_dir / "projects" / "testproj"
+        proj.mkdir(parents=True)
+        # Sessions across 2 different weeks
+        entries1 = [{"type": "assistant", "message": {"model": "claude-opus-4-6", "content": [],
+                     "usage": {"input_tokens": 1000, "output_tokens": 500}},
+                     "timestamp": "2026-03-20T10:00:00Z", "sessionId": "week1"}]
+        entries2 = [{"type": "assistant", "message": {"model": "claude-opus-4-6", "content": [],
+                     "usage": {"input_tokens": 1000, "output_tokens": 500}},
+                     "timestamp": "2026-03-27T10:00:00Z", "sessionId": "week2"}]
+        (proj / "week1.jsonl").write_text(json.dumps(entries1[0]))
+        (proj / "week2.jsonl").write_text(json.dumps(entries2[0]))
+        cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
+        _backfill_trends(cfg)
+        out = capsys.readouterr().out
+        assert "Backfilled" in out
+        trends = [json.loads(l) for l in (data_dir / "trends.jsonl").read_text().strip().split("\n")]
+        assert len(trends) >= 2
+
+    def test_backfill_idempotent(self, tmp_path, capsys):
+        from cc_retrospect.core import _backfill_trends, Config
+        data_dir = tmp_path / ".cc-retrospect"
+        data_dir.mkdir()
+        claude_dir = tmp_path / ".claude"
+        proj = claude_dir / "projects" / "testproj"
+        proj.mkdir(parents=True)
+        entries = [{"type": "assistant", "message": {"model": "claude-opus-4-6", "content": [],
+                    "usage": {"input_tokens": 1000, "output_tokens": 500}},
+                    "timestamp": "2026-03-20T10:00:00Z", "sessionId": "bf1"}]
+        (proj / "bf1.jsonl").write_text(json.dumps(entries[0]))
+        cfg = Config(data_dir=data_dir, claude_dir=claude_dir)
+        _backfill_trends(cfg)
+        count1 = len((data_dir / "trends.jsonl").read_text().strip().split("\n"))
+        _backfill_trends(cfg)
+        count2 = len((data_dir / "trends.jsonl").read_text().strip().split("\n"))
+        assert count1 == count2
+
+
+# ---------------------------------------------------------------------------
+# Daily health check in session_start
+# ---------------------------------------------------------------------------
+
 class TestDailyHealthCheck:
     def test_health_check_fires_once_per_day(self, config, capsys):
         from cc_retrospect.core import run_session_start_hook

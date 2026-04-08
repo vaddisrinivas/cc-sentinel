@@ -872,39 +872,56 @@ def _save_live_state(config: Config, state) -> None:
 
 # --- Command entry points ---
 
-def _render(analyzer_cls, config: Config | None = None, sessions=None) -> int:
+def _filter_sessions(sessions: list[SessionSummary], project: str | None = None, days: int | None = None) -> list[SessionSummary]:
+    """Filter sessions by project name and/or recent N days."""
+    if project:
+        sessions = [s for s in sessions if project.lower() in display_project(s.project).lower()]
+    if days and days > 0:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        sessions = [s for s in sessions if s.start_ts and s.start_ts >= cutoff]
+    return sessions
+
+
+def _render(analyzer_cls, payload: dict = {}, *, config: Config | None = None, sessions=None) -> int:
     cfg = config or load_config()
     ss = sessions if sessions is not None else load_all_sessions(cfg)
-    print(analyzer_cls().analyze(ss, cfg).render_markdown())
+    ss = _filter_sessions(ss, project=payload.get("project"), days=payload.get("days"))
+    result = analyzer_cls().analyze(ss, cfg)
+    if payload.get("json"):
+        print(result.render_json())
+    else:
+        print(result.render_markdown())
     return 0
 
 
-def run_cost(payload: dict = {}, *, config: Config | None = None) -> int:       return _render(CostAnalyzer, config=config)
-def run_habits(payload: dict = {}, *, config: Config | None = None) -> int:     return _render(HabitsAnalyzer, config=config)
-def run_health(payload: dict = {}, *, config: Config | None = None) -> int:     return _render(HealthAnalyzer, config=config)
-def run_tips(payload: dict = {}, *, config: Config | None = None) -> int:       return _render(TipsAnalyzer, config=config)
-def run_waste(payload: dict = {}, *, config: Config | None = None) -> int:      return _render(WasteAnalyzer, config=config)
-def run_compare(payload: dict = {}, *, config: Config | None = None) -> int:    return _render(CompareAnalyzer, config=config)
+def run_cost(payload: dict = {}, *, config: Config | None = None) -> int:       return _render(CostAnalyzer, payload, config=config)
+def run_habits(payload: dict = {}, *, config: Config | None = None) -> int:     return _render(HabitsAnalyzer, payload, config=config)
+def run_health(payload: dict = {}, *, config: Config | None = None) -> int:     return _render(HealthAnalyzer, payload, config=config)
+def run_tips(payload: dict = {}, *, config: Config | None = None) -> int:       return _render(TipsAnalyzer, payload, config=config)
+def run_waste(payload: dict = {}, *, config: Config | None = None) -> int:      return _render(WasteAnalyzer, payload, config=config)
+def run_compare(payload: dict = {}, *, config: Config | None = None) -> int:    return _render(CompareAnalyzer, payload, config=config)
 
 
 def run_report(payload: dict = {}, *, config: Config | None = None) -> int:
     config = config or load_config()
     sessions = load_all_sessions(config)
-    parts = [f"# cc-retrospect Report\n\nGenerated: {datetime.now().isoformat()}\n"]
+    sessions = _filter_sessions(sessions, project=payload.get("project"), days=payload.get("days"))
+    now = datetime.now()
+    parts = [f"# cc-retrospect Report\n\nGenerated: {now.isoformat()}\n"]
     for a in get_analyzers(config):
         parts.append(a.analyze(sessions, config).render_markdown())
     report = "\n---\n\n".join(parts)
     reports_dir = config.data_dir / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
-    report_path = reports_dir / f"report-{datetime.now().strftime('%Y-%m-%dT%H-%M-%S')}.md"
+    report_path = reports_dir / f"report-{now.strftime('%Y-%m-%dT%H-%M-%S')}.md"
     report_path.write_text(report, encoding="utf-8")
     print(f"Report saved to {report_path}")
     print(report)
     return 0
 
 
-def run_savings(payload: dict = {}, *, config: Config | None = None) -> int:   return _render(SavingsAnalyzer, config=config)
-def run_model_efficiency(payload: dict = {}, *, config: Config | None = None) -> int: return _render(ModelAnalyzer, config=config)
+def run_savings(payload: dict = {}, *, config: Config | None = None) -> int:   return _render(SavingsAnalyzer, payload, config=config)
+def run_model_efficiency(payload: dict = {}, *, config: Config | None = None) -> int: return _render(ModelAnalyzer, payload, config=config)
 
 
 def run_digest(payload: dict = {}, *, config: Config | None = None) -> int:
@@ -1050,7 +1067,60 @@ class TrendAnalyzer:
 
 
 def run_trends(payload: dict = {}, *, config: Config | None = None) -> int:
-    return _render(TrendAnalyzer, config=config)
+    if payload.get("backfill"):
+        config = config or load_config()
+        _backfill_trends(config)
+        return 0
+    return _render(TrendAnalyzer, payload, config=config)
+
+
+def run_reset(payload: dict = {}, *, config: Config | None = None) -> int:
+    """Clear all cached data files. Sessions are re-scanned on next command."""
+    config = config or load_config()
+    cleared = []
+    for name in ("sessions.jsonl", "state.json", "live_session.json", "compactions.jsonl", "trends.jsonl"):
+        path = config.data_dir / name
+        if path.exists():
+            path.unlink()
+            cleared.append(name)
+    if cleared:
+        print(f"[cc-retrospect] Cleared: {', '.join(cleared)}")
+    else:
+        print("[cc-retrospect] Nothing to clear.")
+    return 0
+
+
+def run_config(payload: dict = {}, *, config: Config | None = None) -> int:
+    """Show current config values (defaults + overrides from config.env)."""
+    config = config or load_config()
+    lines = ["## cc-retrospect Configuration", ""]
+    config_path = config.data_dir / "config.env"
+    lines.append(f"Config file: {config_path} ({'found' if config_path.exists() else 'not found — using defaults'})")
+    lines.append("")
+    lines.append("### Pricing ($/MTok)")
+    for model_name in ("opus", "sonnet", "haiku"):
+        p = getattr(config.pricing, model_name)
+        lines.append(f"  {model_name}: input={p.input_per_mtok} output={p.output_per_mtok} cache_create={p.cache_create_per_mtok} cache_read={p.cache_read_per_mtok}")
+    lines.append("")
+    lines.append("### Thresholds")
+    for field, val in config.thresholds.model_dump().items():
+        if field not in ("frustration_keywords", "waste_webfetch_domains"):
+            lines.append(f"  {field}: {val}")
+    lines.append(f"  waste_webfetch_domains: {', '.join(config.thresholds.waste_webfetch_domains)}")
+    lines.append("")
+    lines.append("### Hints (which hooks produce output)")
+    for field, val in config.hints.model_dump().items():
+        lines.append(f"  {field}: {'on' if val else 'off'}")
+    lines.append("")
+    lines.append("### Data")
+    lines.append(f"  data_dir: {config.data_dir}")
+    lines.append(f"  claude_dir: {config.claude_dir}")
+    lines.append("")
+    if payload.get("json"):
+        print(config.model_dump_json(indent=2))
+    else:
+        print("\n".join(lines))
+    return 0
 
 
 def _update_trends(config: Config) -> None:
@@ -1090,6 +1160,50 @@ def _update_trends(config: Config) -> None:
     config.data_dir.mkdir(parents=True, exist_ok=True)
     with open(trends_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(snapshot) + "\n")
+
+
+def _backfill_trends(config: Config) -> None:
+    """Backfill weekly trends from historical session data."""
+    sessions = load_all_sessions(config)
+    if not sessions:
+        print("[cc-retrospect] No sessions to backfill from.")
+        return
+    trends_path = config.data_dir / "trends.jsonl"
+    existing_weeks = set()
+    if trends_path.exists():
+        for entry in iter_jsonl(trends_path):
+            existing_weeks.add(entry.get("week", ""))
+    # Group sessions by ISO week
+    weeks: dict[str, list[SessionSummary]] = defaultdict(list)
+    for s in sessions:
+        if s.start_ts:
+            try:
+                dt = datetime.fromisoformat(s.start_ts.replace("Z", "+00:00"))
+                weeks[dt.strftime("%G-W%V")].append(s)
+            except (ValueError, TypeError): pass
+    complex_tools = {"Agent", "EnterPlanMode", "WebSearch", "WebFetch"}
+    added = 0
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    with open(trends_path, "a", encoding="utf-8") as f:
+        for wk in sorted(weeks.keys()):
+            if wk in existing_weeks:
+                continue
+            ws = weeks[wk]
+            total_cost = sum(s.total_cost for s in ws)
+            opus_simple = sum(s.model_breakdown.get("claude-opus-4-6", 0) for s in ws
+                              if not any(t in s.tool_counts for t in complex_tools))
+            all_model_cost = sum(s.total_cost for s in ws)
+            efficiency = int((1 - opus_simple / all_model_cost) * 100) if all_model_cost > 0 else 100
+            snapshot = {
+                "week": wk, "cost": round(total_cost, 2), "sessions": len(ws),
+                "avg_duration": round(sum(s.duration_minutes for s in ws) / len(ws), 1),
+                "frustrations": sum(s.frustration_count for s in ws),
+                "subagents": sum(s.subagent_count for s in ws),
+                "model_efficiency": efficiency, "compactions": 0,
+            }
+            f.write(json.dumps(snapshot) + "\n")
+            added += 1
+    print(f"[cc-retrospect] Backfilled {added} weeks of trend data.")
 
 
 # --- Hook entry points ---

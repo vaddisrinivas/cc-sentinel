@@ -689,9 +689,10 @@ class TestDispatchRouting:
         dispatch = importlib.import_module("dispatch")
         expected = {
             "stop_hook", "session_start_hook", "pre_tool_use", "post_tool_use",
-            "pre_compact", "post_compact",
+            "pre_compact", "post_compact", "user_prompt",
             "cost", "habits", "health", "tips", "report", "compare", "waste", "hints",
-            "savings", "model", "digest", "status", "export", "trends",
+            "savings", "model", "digest", "status", "export", "trends", "learn",
+            "reset", "config",
         }
         assert expected == set(dispatch._DISPATCH.keys())
 
