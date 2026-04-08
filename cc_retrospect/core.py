@@ -139,6 +139,13 @@ class MessagesConfig(BaseModel):
     welcome_no_data: str = "Welcome! No session data yet. Hooks will start tracking automatically."
 
 
+class FilterConfig(BaseModel):
+    """Session filtering configuration."""
+    exclude_projects: list[str] = []  # regex patterns to exclude
+    exclude_entrypoints: list[str] = ["cc-retrospect", "cc-later"]  # exclude self-referential tools
+    exclude_sessions_shorter_than: int = 0  # minimum duration in minutes
+
+
 class Config(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(Path.home() / ".cc-retrospect" / "config.env"),
@@ -151,6 +158,7 @@ class Config(BaseSettings):
     thresholds: ThresholdsConfig = ThresholdsConfig()
     hints: HintsConfig = HintsConfig()
     messages: MessagesConfig = MessagesConfig()
+    filter: FilterConfig = FilterConfig()
     data_dir: Path = Path.home() / ".cc-retrospect"
     claude_dir: Path = Path.home() / ".claude"
 
@@ -233,9 +241,22 @@ def extract_usage(entry: dict, project: str) -> UsageRecord | None:
 
 
 def _pricing_for_model(model_str: str, pricing: ModelPricing) -> PricingConfig:
+    """Get pricing config for a model, with support for full model names."""
     m = model_str.lower()
+    # Check full model names first
+    if "claude-opus" in m or "claude-3-opus" in m or "claude-4" in m:
+        return pricing.opus
+    if "claude-sonnet" in m or "claude-3-sonnet" in m:
+        return pricing.sonnet
+    if "claude-haiku" in m or "claude-3-haiku" in m:
+        return pricing.haiku
+    # Fallback to substring matching
     if "sonnet" in m: return pricing.sonnet
     if "haiku" in m: return pricing.haiku
+    # Log debug for test/synthetic models, default to opus (conservative)
+    if m and not m.startswith("<"):  # Don't warn on test models like <synthetic>
+        if m not in ("opus", "gpt-4", "gpt-3.5"):  # known non-Claude models
+            logger.debug("Unknown model string: %s, defaulting to Opus pricing", model_str)
     return pricing.opus
 
 
@@ -894,20 +915,30 @@ def _save_live_state(config: Config, state) -> None:
 
 # --- Command entry points ---
 
-def _filter_sessions(sessions: list[SessionSummary], project: str | None = None, days: int | None = None) -> list[SessionSummary]:
-    """Filter sessions by project name and/or recent N days."""
+def _filter_sessions(sessions: list[SessionSummary], project: str | None = None, days: int | None = None, config: Config | None = None) -> list[SessionSummary]:
+    """Filter sessions by project name, recent N days, and config exclusion rules."""
     if project:
         sessions = [s for s in sessions if project.lower() in display_project(s.project).lower()]
     if days and days > 0:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         sessions = [s for s in sessions if s.start_ts and s.start_ts >= cutoff]
+    if config and config.filter:
+        # Exclude by project patterns
+        for pat in config.filter.exclude_projects:
+            sessions = [s for s in sessions if pat.lower() not in display_project(s.project).lower()]
+        # Exclude by entrypoint
+        for ep in config.filter.exclude_entrypoints:
+            sessions = [s for s in sessions if ep.lower() not in (s.entrypoint or "").lower()]
+        # Exclude by minimum duration
+        if config.filter.exclude_sessions_shorter_than > 0:
+            sessions = [s for s in sessions if s.duration_minutes >= config.filter.exclude_sessions_shorter_than]
     return sessions
 
 
 def _render(analyzer_cls, payload: dict = {}, *, config: Config | None = None, sessions=None) -> int:
     cfg = config or load_config()
     ss = sessions if sessions is not None else load_all_sessions(cfg)
-    ss = _filter_sessions(ss, project=payload.get("project"), days=payload.get("days"))
+    ss = _filter_sessions(ss, project=payload.get("project"), days=payload.get("days"), config=cfg)
     result = analyzer_cls().analyze(ss, cfg)
     if payload.get("json"):
         print(result.render_json())
