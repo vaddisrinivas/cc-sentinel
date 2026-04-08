@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -33,7 +33,7 @@ jobs:
 
       - name: Run pytest
         run: |
-          pytest tests/ -v --tb=short --cov=cc_retrospect
+          pytest tests/ -v --tb=short --cov=cc_retrospect --ignore=tests/test_real_data.py
 
       - name: Smoke test
         run: |

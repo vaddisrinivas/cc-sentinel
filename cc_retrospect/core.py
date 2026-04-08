@@ -31,7 +31,7 @@ from cc_retrospect.models import (
 
 from cc_retrospect.parsers import (
     iter_jsonl, iter_project_sessions, extract_usage,
-    _pricing_for_model, compute_cost, analyze_session,
+    compute_cost, analyze_session,
 )
 
 from cc_retrospect.utils import (

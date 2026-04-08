@@ -4,11 +4,9 @@ from __future__ import annotations
 import json
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from cc_retrospect.config import Config, load_config
-from cc_retrospect.models import SessionSummary
-from cc_retrospect.cache import load_all_sessions, _load_live_state, _save_live_state
+from cc_retrospect.cache import load_all_sessions
 from cc_retrospect.analyzers import get_analyzers, CostAnalyzer, HabitsAnalyzer, HealthAnalyzer, TipsAnalyzer, WasteAnalyzer, CompareAnalyzer, SavingsAnalyzer, ModelAnalyzer, TrendAnalyzer
 from cc_retrospect.utils import _render, _fmt_cost, _fmt_tokens, _fmt_duration, display_project, _filter_sessions
 
@@ -168,7 +166,7 @@ def run_status(payload: dict | None = None, *, config: Config | None = None) -> 
             session_count += 1
             _print_progress(session_count, "sessions")
     if session_count == 0:
-        lines.append(f"Cached sessions: No sessions yet")
+        lines.append("Cached sessions: No sessions yet")
     else:
         lines.append(f"Cached sessions: {session_count}")
     # Config file

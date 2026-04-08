@@ -7,9 +7,9 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from cc_retrospect.config import Config, load_config
-from cc_retrospect.models import UserProfile, SessionSummary
+from cc_retrospect.models import UserProfile
 from cc_retrospect.parsers import iter_project_sessions, iter_jsonl, _pricing_for_model
-from cc_retrospect.utils import display_project, _fmt_duration
+from cc_retrospect.utils import _fmt_duration
 
 logger = logging.getLogger("cc_retrospect")
 

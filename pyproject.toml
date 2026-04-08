@@ -42,6 +42,12 @@ packages = ["cc_retrospect"]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
 
+[tool.ruff]
+line-length = 200
+
+[tool.ruff.lint]
+ignore = ["E701", "E702", "E741", "E402"]
+
 [tool.coverage.run]
 source = ["cc_retrospect"]
 omit = ["tests/*", "scripts/*"]

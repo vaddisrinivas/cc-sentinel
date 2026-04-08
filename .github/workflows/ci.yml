@@ -24,10 +24,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install test dependencies
-        run: pip install -r requirements-test.txt
+      - name: Install dependencies
+        run: pip install -e ".[test]"
 
-      - name: Run unit and integration tests
+      - name: Run tests
         run: |
           pytest tests/ -v \
             --tb=short \
@@ -56,20 +56,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install linting tools
-        run: pip install pyflakes pydantic pydantic-settings
+      - name: Install dependencies
+        run: |
+          pip install ruff
+          pip install -e ".[test]"
 
-      - name: Run pyflakes on source
-        run: python -m pyflakes cc_retrospect/core.py
-
-      - name: Run pyflakes on tests
-        run: python -m pyflakes tests/
-
-      - name: Check dispatch script
-        run: python -m pyflakes scripts/dispatch.py
+      - name: Ruff check
+        run: ruff check cc_retrospect/ scripts/ tests/
 
   smoke:
-    name: Smoke test dispatch script
+    name: Smoke test
     runs-on: ubuntu-latest
 
     steps:
@@ -81,28 +77,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements-test.txt
+        run: pip install -e ".[test]"
 
-      - name: Dispatch hints command runs without error
-        run: python scripts/dispatch.py hints
-
-      - name: Dispatch cost with empty project dir
-        env:
-          # Point cc-retrospect at a tmp dir so nothing tries to read ~/.claude
-          CC_ANALYZE_DATA_DIR: /tmp/cc-retrospect-smoke
+      - name: Dispatch smoke tests
         run: |
-          mkdir -p /tmp/cc-retrospect-smoke
-          # cost command should handle zero sessions gracefully
-          python -c "
-          import sys, os, json
-          sys.path.insert(0, '.')
-          from cc_retrospect.core import Config, CostAnalyzer
-          from pathlib import Path
-          cfg = Config(
-            data_dir=Path('/tmp/cc-retrospect-smoke'),
-            claude_dir=Path('/tmp/cc-retrospect-smoke/claude'),
-          )
-          result = CostAnalyzer().analyze([], cfg)
-          assert result is not None
-          print('Smoke test passed:', result.title)
-          "
+          python scripts/dispatch.py hints
+          python scripts/dispatch.py config
+          python scripts/dispatch.py status

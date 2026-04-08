@@ -12,8 +12,8 @@ from urllib.parse import urlparse
 from cc_retrospect.cache import _atomic_write_json, _is_valid_session_id, _init_live_state, _load_live_state, _save_live_state, load_all_sessions
 from cc_retrospect.config import Config, load_config
 from cc_retrospect.models import SessionSummary
-from cc_retrospect.parsers import iter_jsonl, analyze_session, iter_project_sessions
-from cc_retrospect.utils import _fmt_cost, _fmt_duration, _fmt_tokens, display_project
+from cc_retrospect.parsers import iter_jsonl, analyze_session
+from cc_retrospect.utils import _fmt_cost, _fmt_duration
 from cc_retrospect.learn import analyze_user_messages, generate_style, generate_learnings
 
 logger = logging.getLogger("cc_retrospect")

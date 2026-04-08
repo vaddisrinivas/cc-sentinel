@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -99,7 +98,6 @@ def compute_cost(rec: UsageRecord, pricing: ModelPricing) -> float:
 
 
 def analyze_session(jsonl_path: Path, project: str, config: Config) -> SessionSummary:
-    from cc_retrospect.utils import display_project
 
     session_id = first_ts = last_ts = entrypoint = cwd = git_branch = ""
     msg_count = user_count = assistant_count = total_input = total_output = 0

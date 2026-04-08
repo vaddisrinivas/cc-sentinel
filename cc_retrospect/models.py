@@ -1,7 +1,6 @@
 """cc-retrospect models — Pydantic data structures for sessions and analysis results."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
