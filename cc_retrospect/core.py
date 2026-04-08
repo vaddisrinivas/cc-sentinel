@@ -1332,8 +1332,8 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
     config.data_dir.mkdir(parents=True, exist_ok=True)
     # Check if session already in cache before appending
     cache_path = config.data_dir / "sessions.jsonl"
+    existing_ids = set()
     if cache_path.exists():
-        existing_ids = set()
         try:
             for entry in iter_jsonl(cache_path):
                 s = SessionSummary.model_validate(entry)
