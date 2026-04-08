@@ -6,23 +6,30 @@ Claude Code doesn't show you what you're spending. No cost dashboard, no warning
 
 ## Install
 
-### From GitHub (recommended)
+### Claude Code plugin (recommended)
 
-```bash
-git clone https://github.com/vaddisrinivas/cc-retrospect ~/.claude/plugins/cc-retrospect
-~/.claude/plugins/cc-retrospect/install.sh
+```
+/plugin marketplace add vaddisrinivas/cc-retrospect
+/plugin install cc-retrospect@vaddisrinivas
 ```
 
-The installer detects `uv`/`pip`, installs dependencies, verifies the plugin, and optionally backfills trend data from your existing sessions.
+### One-liner
+
+```bash
+git clone https://github.com/vaddisrinivas/cc-retrospect ~/.claude/plugins/cc-retrospect && ~/.claude/plugins/cc-retrospect/install.sh
+```
 
 ### Manual
 
 ```bash
 git clone https://github.com/vaddisrinivas/cc-retrospect ~/.claude/plugins/cc-retrospect
-cd ~/.claude/plugins/cc-retrospect && uv pip install -e .  # or pip install -e .
+cd ~/.claude/plugins/cc-retrospect
+uv pip install -e .   # or: pip install -e .
 ```
 
 Hooks are auto-discovered by Claude Code from the plugin.
+
+---
 
 ## What it does
 
@@ -32,9 +39,9 @@ Hooks are auto-discovered by Claude Code from the plugin.
 - Tracks session cost, compaction events, daily spend
 - Shows last-session recap + daily digest on session start
 
-**On demand** — 17 slash commands for cost breakdowns, waste detection, model efficiency, savings projections, trends, and more.
+**On demand** — 18 slash commands for cost breakdowns, waste detection, model efficiency, savings projections, trends, and more.
 
-**Behavioral** — 3 skills where Claude reasons about your patterns: full retrospective, communication profiling (generates STYLE.md), and disk cleanup.
+**Behavioral** — skills where Claude reasons about your patterns: full retrospective, communication profiling (generates STYLE.md), and disk cleanup.
 
 ## Quick start
 
@@ -47,9 +54,11 @@ After install, just use Claude Code normally. Hooks work silently. When you want
 /cc-retrospect:analyze       — full retrospective (Claude reasons about everything)
 ```
 
+All commands support `--json`, `--project NAME`, and `--days N` flags.
+
 ## Documentation
 
-- [Commands & Skills](docs/commands.md) — all 17 commands and 3 skills
+- [Commands & Skills](docs/commands.md) — all 18 commands and 8 skills
 - [Configuration](docs/configuration.md) — pricing, thresholds, hints, custom analyzers
 - [Architecture](docs/architecture.md) — how it works, hook flow, data sources
 - [Development](docs/development.md) — running tests, contributing
