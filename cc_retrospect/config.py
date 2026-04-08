@@ -64,6 +64,9 @@ class MessagesConfig(BaseModel):
     digest_summary: str = "Yesterday: {count} sessions, {cost}, {frustrations} frustrations, {subagents} subagents, {compactions} compactions."
     digest_model_tip: str = "Model tip: {cost} spent on Opus for simple tasks — try /model sonnet."
     budget_alert: str = "Budget alert: {cost} spent today (threshold: {threshold})."
+    budget_warning: str = "Budget warning: {cost} spent today (threshold: {threshold})."
+    budget_critical: str = "BUDGET CRITICAL: {cost} spent today (threshold: {threshold}). Consider pausing."
+    budget_severe: str = "BUDGET SEVERE: {cost} spent today (threshold: {threshold}). Strongly recommend stopping."
     hint_webfetch_github: str = "Consider using `gh` CLI instead of WebFetch for {domain} — structured output, fewer tokens."
     hint_agent_simple: str = "This looks like a simple search — try Grep or Glob directly to save a subagent spawn."
     hint_bash_chain: str = "Multiple consecutive Bash calls — consider combining with && or writing a script."
@@ -87,6 +90,42 @@ class FilterConfig(BaseModel):
     exclude_sessions_shorter_than: int = 0
 
 
+class ProjectOverride(BaseModel):
+    """Per-project threshold overrides. Fields set to None fall back to global."""
+    daily_cost_warning: float | None = None
+    long_session_minutes: int | None = None
+    max_subagents_per_session: int | None = None
+
+
+class BudgetTier(BaseModel):
+    threshold: float
+    message: str | None = None
+
+
+class BudgetConfig(BaseModel):
+    warning: BudgetTier = BudgetTier(threshold=100.0)
+    critical: BudgetTier = BudgetTier(threshold=300.0)
+    severe: BudgetTier = BudgetTier(threshold=500.0)
+
+
+class ScriptsConfig(BaseModel):
+    on_session_end: list[str] = []
+    on_session_start: list[str] = []
+    on_budget_alert: list[str] = []
+    on_waste_detected: list[str] = []
+    on_compaction: list[str] = []
+    timeout_seconds: int = 5
+
+
+class StyleConfig(BaseModel):
+    enabled_rules: list[str] = ["core_style", "corrections", "approvals", "mega_paste", "frustration", "compression"]
+    custom_rules: list[str] = []
+    correction_threshold: int = 10
+    frustration_threshold: float = 3.0
+    mega_pct_threshold: float = 10.0
+    template_path: str | None = None
+
+
 class Config(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(Path.home() / ".cc-retrospect" / "config.env"),
@@ -100,8 +139,22 @@ class Config(BaseSettings):
     hints: HintsConfig = HintsConfig()
     messages: MessagesConfig = MessagesConfig()
     filter: FilterConfig = FilterConfig()
+    budget: BudgetConfig = BudgetConfig()
+    scripts: ScriptsConfig = ScriptsConfig()
+    style: StyleConfig = StyleConfig()
+    project_overrides: dict[str, ProjectOverride] = {}
     data_dir: Path = Path.home() / ".cc-retrospect"
     claude_dir: Path = Path.home() / ".claude"
+
+    def get_threshold(self, project: str, field: str):
+        """Return project-specific override if set, else global threshold."""
+        normalized = project.lower().replace("-", "_")
+        for key, override in self.project_overrides.items():
+            if key.lower().replace("-", "_") in normalized:
+                val = getattr(override, field, None)
+                if val is not None:
+                    return val
+        return getattr(self.thresholds, field)
 
 
 def load_config(config_path: Path | None = None) -> Config:

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import subprocess
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -17,6 +19,21 @@ from cc_retrospect.utils import _fmt_cost, _fmt_duration
 from cc_retrospect.learn import analyze_user_messages, generate_style, generate_learnings
 
 logger = logging.getLogger("cc_retrospect")
+
+
+def _run_custom_scripts(config, event: str, env_vars: dict[str, str]) -> None:
+    """Run user-defined scripts for a hook event."""
+    scripts_list = getattr(config.scripts, event, [])
+    if not scripts_list: return
+    env = {**os.environ, "CC_EVENT": event}
+    env.update({k: str(v) for k, v in env_vars.items()})
+    for cmd in scripts_list:
+        try:
+            subprocess.run(cmd, shell=True, env=env, timeout=config.scripts.timeout_seconds, capture_output=True, text=True)
+        except subprocess.TimeoutExpired:
+            logger.warning("Custom script timed out: %s", cmd)
+        except Exception as e:
+            logger.debug("Custom script failed: %s: %s", cmd, e)
 
 
 def _compactions_path(config: Config) -> Path:
@@ -178,6 +195,16 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
     else:
         state["today_date"] = today
         state["today_cost"] = summary.total_cost
+    # Per-project cost tracking
+    projects = state.get("projects", {})
+    proj_state = projects.get(summary.project, {})
+    if proj_state.get("today_date") == today:
+        proj_state["today_cost"] = proj_state.get("today_cost", 0) + summary.total_cost
+    else:
+        proj_state["today_date"] = today
+        proj_state["today_cost"] = summary.total_cost
+    projects[summary.project] = proj_state
+    state["projects"] = projects
     # Waste flags on session end (configurable)
     waste_flags = []
     gh_calls = sum(c for d, c in summary.webfetch_domains.items() if "github.com" in d)
@@ -232,7 +259,7 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
             profile = analyze_user_messages(config)
             style_path = config.data_dir / "STYLE.md"
             learnings_path = config.data_dir / "LEARNINGS.md"
-            style_path.write_text(generate_style(profile), encoding="utf-8")
+            style_path.write_text(generate_style(profile, config), encoding="utf-8")
             learnings_path.write_text(generate_learnings(profile), encoding="utf-8")
             state["session_count_since_learn"] = 0
             state["last_learn_refresh"] = datetime.now(timezone.utc).isoformat()
@@ -246,12 +273,26 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
     except Exception as e:
         logger.debug("Failed to write state.json: %s", e)
 
-    # Budget alert
-    if state.get("today_cost", 0) > config.thresholds.daily_cost_warning:
-        print(f"{config.messages.prefix} {config.messages.budget_alert.format(cost=_fmt_cost(state.get('today_cost', 0)), threshold=_fmt_cost(config.thresholds.daily_cost_warning))}", file=sys.stderr)
+    # Multi-tier budget alerts
+    today_cost = state.get("today_cost", 0)
+    alerted_today = set(state.get("budget_alerts_today", []))
+    if state.get("budget_alerts_date", "") != today:
+        alerted_today = set()
+        state["budget_alerts_date"] = today
+    for tier_name, tier in [("warning", config.budget.warning), ("critical", config.budget.critical), ("severe", config.budget.severe)]:
+        if today_cost >= tier.threshold and tier_name not in alerted_today:
+            msg = tier.message or getattr(config.messages, f"budget_{tier_name}", config.messages.budget_alert)
+            print(f"{config.messages.prefix} {msg.format(cost=_fmt_cost(today_cost), threshold=_fmt_cost(tier.threshold))}", file=sys.stderr)
+            alerted_today.add(tier_name)
+            _run_custom_scripts(config, "on_budget_alert", {"CC_DAILY_COST": f"{today_cost:.2f}", "CC_BUDGET_TIER": tier_name, "CC_THRESHOLD": f"{tier.threshold:.2f}", "CC_PROJECT": summary.project})
+    state["budget_alerts_today"] = list(alerted_today)
     # Update weekly trends
     try: _update_trends(config)
     except Exception as e: logger.debug("Trend update failed: %s", e)
+    # Custom scripts
+    if waste_flags:
+        _run_custom_scripts(config, "on_waste_detected", {"CC_WASTE_FLAGS": "; ".join(waste_flags), "CC_PROJECT": summary.project})
+    _run_custom_scripts(config, "on_session_end", {"CC_SESSION_COST": f"{summary.total_cost:.2f}", "CC_PROJECT": summary.project, "CC_DAILY_COST": f"{state.get('today_cost', 0):.2f}", "CC_SESSION_ID": summary.session_id, "CC_DURATION_MINUTES": f"{summary.duration_minutes:.1f}"})
     return 0
 
 
@@ -372,6 +413,7 @@ def run_session_start_hook(payload: dict, *, config: Config | None = None) -> in
     if lines and config.hints.session_start:
         print(f"{m.prefix} " + " ".join(lines))
     _init_live_state(config)
+    _run_custom_scripts(config, "on_session_start", {"CC_CWD": cwd})
     return 0
 
 
@@ -508,4 +550,5 @@ def run_post_compact(payload: dict, *, config: Config | None = None) -> int:
     config.data_dir.mkdir(parents=True, exist_ok=True)
     with open(_compactions_path(config), "a", encoding="utf-8") as f:
         f.write(json.dumps(event) + "\n")
+    _run_custom_scripts(config, "on_compaction", {"CC_SESSION_ID": payload.get("session_id", ""), "CC_TOKENS_FREED": str(payload.get("tokens_freed", 0))})
     return 0

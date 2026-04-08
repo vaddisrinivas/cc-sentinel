@@ -251,39 +251,59 @@ def analyze_user_messages(config: Config) -> UserProfile:
     )
 
 
-def generate_style(profile: UserProfile) -> str:
+def generate_style(profile: UserProfile, config=None) -> str:
     """Generate a STYLE.md based on detected patterns."""
+    if config is None:
+        from cc_retrospect.config import default_config
+        config = default_config()
+    sc = config.style
+
+    # Template mode: if user provides a template, use it
+    if sc.template_path:
+        from pathlib import Path
+        template_file = Path(sc.template_path)
+        if template_file.exists():
+            try:
+                return template_file.read_text(encoding="utf-8").format_map(profile.model_dump())
+            except (KeyError, ValueError):
+                pass  # Fall through to rule-based generation
+
+    enabled = set(sc.enabled_rules)
     lines = ["# Response Style", ""]
 
-    # Core style
-    if profile.median_length < 100:
-        lines.append("Be extremely concise. Lead with answer or action, not reasoning. No preamble, no trailing summaries. First sentence = the answer.")
-    elif profile.median_length < 300:
-        lines.append("Be concise but thorough. Lead with the answer, add brief context only when needed.")
-    else:
-        lines.append("Match the user's detail level. They write detailed prompts — provide proportionally detailed responses.")
+    if "core_style" in enabled:
+        if profile.median_length < 100:
+            lines.append("Be extremely concise. Lead with answer or action, not reasoning. No preamble, no trailing summaries, no \"I'll now...\" narration. First sentence = the answer. Skip filler.")
+        elif profile.median_length < 300:
+            lines.append("Be concise but thorough. Lead with the answer, add brief context only when needed.")
+        else:
+            lines.append("Match the user's detail level. They write detailed prompts — provide proportionally detailed responses.")
 
-    # Correction style
-    if profile.correction_count > 10:
-        lines.append('When user says "no X" — change only X, keep everything else unchanged.')
+    if "corrections" in enabled and profile.correction_count > sc.correction_threshold:
+        lines.append('When I say "no X" — change only X, keep everything else.')
 
-    # Approval signals
-    top_approvals = list(profile.approval_signals.keys())[:3]
-    if top_approvals:
-        quoted = ", ".join(f'"{a}"' for a in top_approvals)
-        lines.append(f"When user says {quoted} — execute immediately, zero recap.")
+    if "approvals" in enabled:
+        top_approvals = list(profile.approval_signals.keys())[:3]
+        if top_approvals:
+            quoted = ", ".join(f'"{a}"' for a in top_approvals)
+            lines.append(f"When I say {quoted} — execute immediately, zero recap.")
 
-    # Paste handling
-    if profile.mega_prompt_pct > 10:
-        lines.append("When user pastes large content — scan it, identify the actionable item, and act. Don't ask what they want.")
+    if "mega_paste" in enabled and profile.mega_prompt_pct > sc.mega_pct_threshold:
+        lines.append("When I paste content — scan it, act on it, don't ask what I want.")
 
-    # Frustration
-    if profile.frustration_rate > 3:
+    if "frustration" in enabled and profile.frustration_rate > sc.frustration_threshold:
         lines.append("On frustration signals — pause, re-read context, don't blindly execute. Suggest a different approach.")
 
-    lines.append("")
-    lines.append("## Output Compression")
-    lines.append("Drop articles (a/an/the), filler words, pleasantries, hedging. Use short synonyms. Fragments OK. Keep technical terms exact, code blocks unchanged, error quotes verbatim. Revert to normal for security warnings and irreversible actions.")
+    if "compression" in enabled:
+        lines.append("")
+        lines.append("## Output Compression")
+        lines.append("Drop articles (a/an/the), filler words, pleasantries, hedging. Use short synonyms. Fragments OK. Keep technical terms exact, code blocks unchanged, error quotes verbatim. Revert to normal for security warnings, irreversible actions, or multi-step sequences where clarity matters.")
+
+    # Append user's custom rules
+    if sc.custom_rules:
+        lines.append("")
+        lines.append("## Custom Rules")
+        lines.extend(sc.custom_rules)
 
     return "\n".join(lines) + "\n"
 
@@ -367,7 +387,7 @@ def run_learn(payload: dict = {}, *, config: Config | None = None) -> int:
 
     profile = analyze_user_messages(config)
 
-    style_content = generate_style(profile)
+    style_content = generate_style(profile, config)
     learnings_content = generate_learnings(profile)
 
     # Write to data dir
