@@ -158,10 +158,11 @@ class Config(BaseSettings):
 
 
 def load_config(config_path: Path | None = None) -> Config:
-    """Compat shim: load config from optional path or defaults."""
+    """Load config from optional path, or from default ~/.cc-retrospect/config.env."""
     if config_path and Path(config_path).exists():
         return Config(_env_file=str(config_path))
-    return Config(_env_file=None)
+    # Let pydantic use the default env_file from model_config
+    return Config()
 
 
 def default_config() -> Config:

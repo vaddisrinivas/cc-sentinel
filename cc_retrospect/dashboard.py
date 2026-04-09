@@ -42,9 +42,14 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
     """Generate dashboard HTML string with embedded data."""
     config = config or load_config()
 
+    from cc_retrospect.utils import _filter_sessions
     all_sessions = load_all_sessions(config)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()[:10]
-    sessions = [s for s in all_sessions if s.start_ts and s.start_ts[:10] >= cutoff]
+    all_sessions = _filter_sessions(all_sessions, days=days, config=config)
+    # Sort by date descending and exclude noise
+    sessions = sorted(
+        [s for s in all_sessions if s.start_ts],
+        key=lambda s: s.start_ts, reverse=True,
+    )
 
     state = _load_json(config.data_dir / "state.json")
     trends = _load_jsonl(config.data_dir / "trends.jsonl")
