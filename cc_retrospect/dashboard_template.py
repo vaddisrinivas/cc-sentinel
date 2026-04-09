@@ -203,7 +203,7 @@ document.getElementById('meta').textContent = `${D.generated_at} \u00b7 ${D.sess
     data: { labels, datasets: [{ data: labels.map(l=>totals[l]), backgroundColor: labels.map(l=>colors[l]||'#888'), borderWidth: 0 }] },
     options: { responsive: true, maintainAspectRatio: false, cutout: '60%',
       plugins: { legend: { position: 'right', labels: { padding: 12, usePointStyle: true, pointStyle: 'rectRounded',
-        generateLabels: ch => ch.data.labels.map((l,i) => ({text:`${l}  ${fmt(ch.data.datasets[0].data[i])}`, fillStyle:ch.data.datasets[0].backgroundColor[i], strokeStyle:'transparent', index:i}))
+        generateLabels: ch => ch.data.labels.map((l,i) => ({text:`${l}  ${fmt(ch.data.datasets[0].data[i])}`, fillStyle:ch.data.datasets[0].backgroundColor[i], strokeStyle:'transparent', color:'#e6edf3', index:i}))
       }}}
     }
   });
@@ -285,8 +285,10 @@ document.getElementById('meta').textContent = `${D.generated_at} \u00b7 ${D.sess
     const ts = (e.timestamp||e.ts||'').replace('T',' ').slice(0,19);
     const reason = e.compact_reason||e.reason||'auto';
     const freed = e.tokens_freed||e.tokens||0;
-    const phase = e.phase||'';
-    return `<div class="compact-row"><span class="compact-ts">${ts}</span><span class="compact-reason">${phase} ${reason}</span><span class="compact-tokens">${freed?fmtTok(freed)+' freed':''}</span></div>`;
+    const msgs = e.message_count_at_compact||e.message_count||0;
+    const label = freed ? fmtTok(freed)+' freed' : msgs ? `at msg ${msgs}` : '';
+    const reasonTxt = reason==='unknown'||!reason ? 'compacted' : reason;
+    return `<div class="compact-row"><span class="compact-ts">${ts}</span><span class="compact-reason">${reasonTxt}</span><span class="compact-tokens">${label}</span></div>`;
   }).join('');
 })();
 

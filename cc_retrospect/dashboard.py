@@ -80,10 +80,28 @@ def run_dashboard(payload: dict | None = None, *, config: Config | None = None) 
 
     html_content = generate_dashboard(config, days=days)
 
+    # Always write the latest dashboard
     out_path = config.data_dir / "dashboard.html"
     out_path.write_text(html_content, encoding="utf-8")
 
+    # Persist a timestamped snapshot + raw JSON so reports accumulate
+    reports_dir = config.data_dir / "reports"
+    reports_dir.mkdir(exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    snapshot_path = reports_dir / f"dashboard-{stamp}.html"
+    snapshot_path.write_text(html_content, encoding="utf-8")
+
+    # Write raw data JSON (reusable without re-parsing sessions)
+    # Template embeds data as: const D = __DATA_JSON__;
+    script_start = html_content.find('const D = ') + len('const D = ')
+    script_end = html_content.find(';\n', script_start)
+    if script_start > len('const D = ') and script_end > script_start:
+        (reports_dir / f"data-{stamp}.json").write_text(
+            html_content[script_start:script_end], encoding="utf-8"
+        )
+
     url = out_path.resolve().as_uri()
     print(f"Dashboard: {url}", file=sys.stderr)
+    print(f"Snapshot:  {snapshot_path.resolve().as_uri()}", file=sys.stderr)
     webbrowser.open(url)
     return 0
