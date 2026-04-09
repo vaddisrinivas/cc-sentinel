@@ -66,9 +66,11 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
             today_by_project[s.project] = today_by_project.get(s.project, 0) + s.total_cost
     state["today_cost"] = today_cost
     state["today_date"] = today_str
-    state.setdefault("projects", {})
-    for proj, cost in today_by_project.items():
-        state["projects"][proj] = {"today_date": today_str, "today_cost": cost}
+    # Replace entirely — stale entries from state.json cause overflow bars
+    state["projects"] = {
+        proj: {"today_date": today_str, "today_cost": cost}
+        for proj, cost in today_by_project.items()
+    }
 
     budget_tiers = [
         {"label": "Warning", "threshold": config.budget.warning.threshold, "color": "#d29922"},
