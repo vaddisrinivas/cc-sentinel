@@ -52,6 +52,24 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
     trends = _load_jsonl(config.data_dir / "trends.jsonl")
     compactions = _load_jsonl(config.data_dir / "compactions.jsonl")
 
+    # Calculate today's cost from full session data (not state.json which only covers hook-fired sessions)
+    from datetime import timezone
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    all_sessions_unfiltered = load_all_sessions(config)
+    today_cost = sum(
+        s.total_cost for s in all_sessions_unfiltered
+        if (s.start_ts or "")[:10] == today_str
+    )
+    today_by_project: dict[str, float] = {}
+    for s in all_sessions_unfiltered:
+        if (s.start_ts or "")[:10] == today_str:
+            today_by_project[s.project] = today_by_project.get(s.project, 0) + s.total_cost
+    state["today_cost"] = today_cost
+    state["today_date"] = today_str
+    state.setdefault("projects", {})
+    for proj, cost in today_by_project.items():
+        state["projects"][proj] = {"today_date": today_str, "today_cost": cost}
+
     budget_tiers = [
         {"label": "Warning", "threshold": config.budget.warning.threshold, "color": "#d29922"},
         {"label": "Critical", "threshold": config.budget.critical.threshold, "color": "#d18616"},

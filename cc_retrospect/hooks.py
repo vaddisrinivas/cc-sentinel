@@ -176,19 +176,20 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
     if not jsonl_path: return 0
     summary = analyze_session(jsonl_path, jsonl_path.parent.name, config)
     config.data_dir.mkdir(parents=True, exist_ok=True)
-    # Check if session already in cache before appending
+    # Fast dedup using a sidecar index file instead of scanning the whole JSONL
     cache_path = config.data_dir / "sessions.jsonl"
-    existing_ids = set()
-    if cache_path.exists():
+    index_path = config.data_dir / "sessions.index"
+    existing_ids: set[str] = set()
+    if index_path.exists():
         try:
-            for entry in iter_jsonl(cache_path):
-                s = SessionSummary.model_validate(entry)
-                existing_ids.add(s.session_id)
+            existing_ids = set(index_path.read_text(encoding="utf-8").splitlines())
         except Exception as e:
-            logger.debug("Failed to read existing cache entries: %s", e)
+            logger.debug("Failed to read sessions index: %s", e)
     if summary.session_id not in existing_ids:
         with open(cache_path, "a", encoding="utf-8") as f:
             f.write(summary.model_dump_json() + "\n")
+        with open(index_path, "a", encoding="utf-8") as f:
+            f.write(summary.session_id + "\n")
     state_path = config.data_dir / "state.json"
     state = {}
     if state_path.exists():
@@ -200,22 +201,40 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
         "last_message_count": summary.message_count, "last_frustration_count": summary.frustration_count,
         "last_subagent_count": summary.subagent_count, "last_ts": datetime.now(timezone.utc).isoformat(),
     })
-    # Budget tracking: accumulate today's cost
+    # Budget tracking: recalculate from cache to avoid double-counting across sessions
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    if state.get("today_date") == today:
-        state["today_cost"] = state.get("today_cost", 0) + summary.total_cost
-    else:
-        state["today_date"] = today
-        state["today_cost"] = summary.total_cost
+    today_cost = 0.0
+    projects_today: dict[str, float] = {}
+    try:
+        with open(cache_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    s = SessionSummary.model_validate(json.loads(line))
+                    if (s.start_ts or "")[:10] == today:
+                        today_cost += s.total_cost
+                        projects_today[s.project] = projects_today.get(s.project, 0) + s.total_cost
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    # Include current session if not yet written to cache
+    if summary.session_id not in existing_ids:
+        if (summary.start_ts or "")[:10] == today:
+            today_cost += summary.total_cost
+            projects_today[summary.project] = projects_today.get(summary.project, 0) + summary.total_cost
+    state["today_date"] = today
+    state["today_cost"] = today_cost
     # Per-project cost tracking
     projects = state.get("projects", {})
-    proj_state = projects.get(summary.project, {})
-    if proj_state.get("today_date") == today:
-        proj_state["today_cost"] = proj_state.get("today_cost", 0) + summary.total_cost
-    else:
-        proj_state["today_date"] = today
-        proj_state["today_cost"] = summary.total_cost
-    projects[summary.project] = proj_state
+    for proj, cost in projects_today.items():
+        projects[proj] = {"today_date": today, "today_cost": cost}
+    # Clear stale project entries from previous days
+    for proj in list(projects.keys()):
+        if projects[proj].get("today_date") != today:
+            projects[proj] = {"today_date": today, "today_cost": 0.0}
     state["projects"] = projects
     # Waste flags on session end (configurable)
     waste_flags = []
