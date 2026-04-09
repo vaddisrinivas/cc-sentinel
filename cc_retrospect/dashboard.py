@@ -9,6 +9,8 @@ from pathlib import Path
 
 from cc_retrospect.config import Config, load_config
 from cc_retrospect.cache import load_all_sessions
+from cc_retrospect.dashboard_server import PORT, ensure_running
+
 DASHBOARD_HTML = (Path(__file__).parent / "dashboard_template.html").read_text(encoding="utf-8")
 
 
@@ -78,6 +80,20 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
         {"label": "Severe", "threshold": config.budget.severe.threshold, "color": "#f85149"},
     ]
 
+    # Build reports list for Reports tab
+    reports: list[dict] = []
+    reports_dir = config.data_dir / "reports"
+    if reports_dir.exists():
+        for f in sorted(reports_dir.glob("dashboard-*.html"), reverse=True):
+            stamp = f.stem.replace("dashboard-", "")
+            data_name = f"data-{stamp}.js"
+            reports.append({
+                "name": f.stem,
+                "date": stamp.replace("_", " ").replace("-", "/", 2),
+                "html_url": f"/reports/{f.name}",
+                "data_url": f"/reports/{data_name}" if (reports_dir / data_name).exists() else None,
+            })
+
     data = {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "state": state,
@@ -86,6 +102,7 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
         "compactions": compactions,
         "budget_tiers": budget_tiers,
         "days": days,
+        "reports": reports,
     }
 
     data_json = json.dumps(data, default=str)
@@ -93,38 +110,36 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
 
 
 def run_dashboard(payload: dict | None = None, *, config: Config | None = None) -> int:
-    """Generate dashboard HTML + data.js and open in browser."""
+    """Refresh data.js, ensure server is running, open browser."""
     payload = payload or {}
     config = config or load_config()
     days = payload.get("days", 30)
 
     data_json = generate_dashboard(config, days=days)
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-
-    # Write latest data.js alongside dashboard.html — loaded via <script src>
     data_dir = config.data_dir
-    data_js_path = data_dir / "data.js"
-    data_js_path.write_text(f"const D = {data_json};\n", encoding="utf-8")
+    data_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write the HTML template (references ./data.js)
-    html = DASHBOARD_HTML  # no inline data injection needed
-    out_path = data_dir / "dashboard.html"
-    out_path.write_text(html, encoding="utf-8")
+    # Write latest data.js (server serves this at /data.js)
+    (data_dir / "data.js").write_text(f"const D = {data_json};\n", encoding="utf-8")
 
-    # Persist timestamped copies — snapshot HTML + data JS stay together
+    # Write latest dashboard.html template
+    (data_dir / "dashboard.html").write_text(DASHBOARD_HTML, encoding="utf-8")
+
+    # Save timestamped snapshot
     reports_dir = data_dir / "reports"
     reports_dir.mkdir(exist_ok=True)
-    snap_data = reports_dir / f"data-{stamp}.js"
+    (reports_dir / f"data-{stamp}.js").write_text(f"const D = {data_json};\n", encoding="utf-8")
     snap_html = reports_dir / f"dashboard-{stamp}.html"
-    snap_data.write_text(f"const D = {data_json};\n", encoding="utf-8")
-    # Snapshot HTML loads its own data file (relative path)
     snap_html.write_text(
-        html.replace('src="data.js"', f'src="data-{stamp}.js"'),
+        DASHBOARD_HTML.replace('src="data.js"', f'src="data-{stamp}.js"'),
         encoding="utf-8",
     )
 
-    url = out_path.resolve().as_uri()
+    # Ensure server is running (starts once, persists)
+    ensure_running()
+
+    url = f"http://127.0.0.1:{PORT}/"
     print(f"Dashboard: {url}", file=sys.stderr)
-    print(f"Snapshot:  {snap_html.resolve().as_uri()}", file=sys.stderr)
     webbrowser.open(url)
     return 0
