@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import json
-import signal
 import sys
-import threading
 import webbrowser
 from datetime import datetime
-from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 from cc_retrospect.config import Config, load_config
@@ -76,44 +73,17 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
 
 
 def run_dashboard(payload: dict | None = None, *, config: Config | None = None) -> int:
-    """Generate dashboard and serve on localhost."""
+    """Generate dashboard HTML file and open in browser."""
     payload = payload or {}
     config = config or load_config()
     days = payload.get("days", 30)
 
     html_content = generate_dashboard(config, days=days)
 
-    class Handler(SimpleHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(html_content.encode("utf-8"))
+    out_path = config.data_dir / "dashboard.html"
+    out_path.write_text(html_content, encoding="utf-8")
 
-        def log_message(self, format, *args):
-            pass  # silence request logs
-
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    port = server.server_address[1]
-    url = f"http://127.0.0.1:{port}"
-    print(f"Dashboard: {url} (Ctrl+C to stop)", file=sys.stderr)
-
-    # Open browser after short delay
-    threading.Timer(0.5, lambda: webbrowser.open(url)).start()
-
-    # Handle Ctrl+C gracefully
-    def _shutdown(sig, frame):
-        print("\nDashboard stopped.", file=sys.stderr)
-        server.shutdown()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
-
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+    url = out_path.resolve().as_uri()
+    print(f"Dashboard: {url}", file=sys.stderr)
+    webbrowser.open(url)
     return 0
