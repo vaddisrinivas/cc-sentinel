@@ -132,7 +132,7 @@ const fmtK = n => n >= 1000 ? '$' + (n/1000).toFixed(1) + 'k' : '$' + n.toFixed(
 const fmtTok = n => n >= 1e9 ? (n/1e9).toFixed(1)+'B' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'k' : String(n);
 const proj = p => (p||'').replace(/^-Users-[^-]+-Projects-/,'').replace(/^-Users-[^-]+-/,'~').replace(/^-/,'') || '?';
 
-Chart.defaults.color = '#8b949e';
+Chart.defaults.color = '#e6edf3';
 Chart.defaults.borderColor = '#21262d';
 Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, sans-serif';
 Chart.defaults.font.size = 11;
@@ -250,7 +250,7 @@ document.getElementById('meta').textContent = `${D.generated_at} \u00b7 ${D.sess
     if (s.duration_minutes>90||s.subagent_count>8||s.total_cost>30) return 'B';
     return 'A';
   }
-  const recent = D.sessions.slice(-30).reverse();
+  const recent = [...D.sessions].sort((a,b)=>(b.start_ts||'').localeCompare(a.start_ts||'')).slice(0,30);
   document.getElementById('sessions').innerHTML = recent.map(s => {
     const g = gr(s);
     const tm = Object.entries(s.model_breakdown||{}).sort((a,b)=>b[1]-a[1])[0];
