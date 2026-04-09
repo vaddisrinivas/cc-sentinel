@@ -6,7 +6,7 @@ import signal
 import sys
 import threading
 import webbrowser
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
