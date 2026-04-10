@@ -47,6 +47,14 @@
       --font-mono: 'JetBrains Mono', monospace;
     }
 
+    :root[data-theme="light"] {
+      --bg: #f8fafc; --s1: #f1f5f9; --s2: #e2e8f0; --s3: #cbd5e1;
+      --b1: rgba(0,0,0,0.05); --b2: rgba(0,0,0,0.09); --b3: rgba(0,0,0,0.16);
+      --text: #0f172a; --muted: #64748b; --dim: #94a3b8;
+      --green-bg: rgba(16,185,129,0.1); --yellow-bg: rgba(245,158,11,0.1);
+      --red-bg: rgba(239,68,68,0.1); --blue-bg: rgba(59,130,246,0.1);
+    }
+
     html {
       scrollbar-width: thin;
       scrollbar-color: var(--b3) transparent
@@ -1298,6 +1306,20 @@
     .footer code {
       color: var(--muted)
     }
+
+    .sess { transition: background 0.15s; }
+    .sess.kbd-focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .sess-detail { max-height: 0; overflow: hidden; transition: max-height 0.35s ease, opacity 0.3s; opacity: 0; }
+    .sess-detail.open { max-height: 300px; opacity: 1; }
+    .btn-theme { background: var(--b1); border: 1px solid var(--b2); color: var(--text); border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 14px; margin-right: 6px; }
+
+    @media(max-width:600px) {
+      .hdr { flex-wrap: wrap; gap: 8px; }
+      .sess-dur, .sess-model, .sess-frust { display: none; }
+      .sess-row { grid-template-columns: 32px 1fr auto; }
+      .grade-chips { overflow-x: auto; flex-wrap: nowrap; }
+      .btn-theme, [onclick="exportCSV()"], [onclick="copyJSON()"] { display: none; }
+    }
   </style>
 </head>
 
@@ -1309,13 +1331,16 @@
       <div class="hdr-left">
         <span class="hdr-logo">cc-retrospect</span>
         <div class="hdr-sep"></div>
-        <span class="hdr-sub" id="meta-date"></span>
+        <span class="hdr-sub" id="meta-date"></span> <span id="meta-age" style="color:var(--muted);font-size:10px"></span>
       </div>
       <div class="hdr-right">
         <div class="hdr-chips">
           <div class="chip"><span class="chip-dot"></span><span id="meta-sess"></span></div>
           <div class="chip"><span id="meta-days"></span></div>
         </div>
+        <button onclick="exportCSV()" class="btn-refresh" style="margin-right:6px">⬇ CSV</button>
+        <button onclick="copyJSON()" class="btn-refresh" style="margin-right:6px">📋 JSON</button>
+        <button class="btn-theme" id="btn-theme" onclick="toggleTheme()" title="Toggle light/dark (d)">🌙</button>
         <button class="btn-refresh" id="btn-refresh" onclick="doReload()">↺ Refresh</button>
       </div>
     </header>
@@ -1392,6 +1417,20 @@
         </div>
       </div>
 
+      <!-- HEATMAP -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-title">Activity Heatmap <span class="muted" style="font-size:11px">— sessions by hour of day &amp; day of week</span></div>
+        <div id="heatmap" style="overflow-x:auto"></div>
+      </div>
+
+      <!-- TOOL USAGE -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-title">Tool Usage <span class="muted" style="font-size:11px">— across all sessions · click to filter</span>
+          <button id="tool-filter-clear" onclick="clearToolFilter()" style="display:none;float:right;font-size:10px;background:var(--b2);border:none;color:var(--text);padding:2px 8px;border-radius:4px;cursor:pointer">✕ Clear filter</button>
+        </div>
+        <div id="tool-chart"></div>
+      </div>
+
     </div><!-- /overview -->
 
     <!-- ══ COMPARE TAB ═══════════════════════════════════════ -->
@@ -1447,6 +1486,22 @@
     </div><!-- /config -->
 
     <div class="footer">cc-retrospect &middot; refresh <code>/cc-retrospect:dashboard</code> &middot; Ctrl+C to stop
+    </div>
+  </div>
+
+  <div id="kbd-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center">
+    <div style="background:var(--s2);border:1px solid var(--b3);border-radius:12px;padding:24px;max-width:400px;width:90%">
+      <div style="font-weight:600;margin-bottom:12px">Keyboard Shortcuts</div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:12px">
+        <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">1-4</kbd><span>Switch tabs</span>
+        <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">/</kbd><span>Focus search</span>
+        <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">↑↓</kbd><span>Navigate sessions</span>
+        <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">Enter</kbd><span>Expand/collapse session</span>
+        <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">Esc</kbd><span>Clear search / close</span>
+        <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">d</kbd><span>Toggle dark/light mode</span>
+        <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">?</kbd><span>This help overlay</span>
+      </div>
+      <button onclick="document.getElementById('kbd-modal').style.display='none'" style="margin-top:16px;background:var(--b2);border:none;color:var(--text);padding:6px 14px;border-radius:6px;cursor:pointer">Close</button>
     </div>
   </div>
 
@@ -1557,6 +1612,20 @@
           f.style.width = f.dataset.w + '%';
         });
       }, 100);
+
+      // Cost sparkline - last 7 days
+      const days7 = [];
+      for (let i=6; i>=0; i--) {
+        const d = new Date(); d.setDate(d.getDate()-i);
+        const key = d.toISOString().slice(0,10);
+        days7.push(D.cost_by_day?.[key] || 0);
+      }
+      const spMax = Math.max(...days7, 0.01);
+      const spPts = days7.map((v,i) => `${(i/6*120).toFixed(1)},${(20-v/spMax*18).toFixed(1)}`).join(' ');
+      const sparkEl = document.createElement('div');
+      sparkEl.style.cssText = 'margin-top:8px;opacity:0.7';
+      sparkEl.innerHTML = `<svg width="120" height="22" style="overflow:visible"><polyline points="${spPts}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/></svg><div style="font-size:9px;color:var(--muted);margin-top:2px">7-day trend</div>`;
+      el.appendChild(sparkEl);
     })();
 
     /* ── STATS ──────────────────────────────── */
@@ -2165,6 +2234,176 @@
         .then(() => { status.textContent = 'Saved ✓'; setTimeout(() => status.textContent = '', 2000); })
         .catch(() => { status.textContent = 'Error'; });
     }
+
+    /* ── THEME TOGGLE ───────────────────────── */
+    function toggleTheme() {
+      const isDark = !document.documentElement.dataset.theme;
+      document.documentElement.dataset.theme = isDark ? 'light' : '';
+      document.getElementById('btn-theme').textContent = isDark ? '☀️' : '🌙';
+      localStorage.setItem('cc-theme', isDark ? 'light' : 'dark');
+    }
+    // Apply saved theme on load
+    (function() {
+      if (localStorage.getItem('cc-theme') === 'light') {
+        document.documentElement.dataset.theme = 'light';
+        document.getElementById('btn-theme').textContent = '☀️';
+      }
+    })();
+
+    /* ── AUTO-REFRESH AGE ───────────────────── */
+    function updateAge() {
+      const genStr = D.generated_at;
+      if (!genStr) return;
+      const gen = new Date(genStr.replace(' ', 'T'));
+      const diffMs = Date.now() - gen;
+      const diffMin = Math.floor(diffMs / 60000);
+      const el = document.getElementById('meta-age');
+      if (!el) return;
+      if (diffMin < 1) el.textContent = '(just now)';
+      else if (diffMin < 60) el.textContent = `(${diffMin}m ago)`;
+      else el.textContent = `(${Math.floor(diffMin/60)}h ago)`;
+      if (diffMin < 5) el.style.color = 'var(--green)';
+      else el.style.color = 'var(--muted)';
+    }
+    updateAge();
+    setInterval(updateAge, 30000);
+
+    /* ── ACTIVITY HEATMAP ───────────────────── */
+    (function() {
+      const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      const grid = Array.from({length:7}, () => new Array(24).fill(0));
+      D.sessions.forEach(s => {
+        if (!s.start_ts) return;
+        try {
+          const d = new Date(s.start_ts);
+          const dow = (d.getDay() + 6) % 7; // Mon=0
+          const hr = d.getHours();
+          grid[dow][hr]++;
+        } catch(e) {}
+      });
+      const max = Math.max(1, ...grid.flat());
+      const hours = Array.from({length:24}, (_,i) => i.toString().padStart(2,'0'));
+      let html = `<div style="display:grid;grid-template-columns:36px repeat(24,1fr);gap:2px;font-size:10px;min-width:600px">`;
+      html += `<div></div>` + hours.map(h => `<div style="text-align:center;color:var(--muted);padding-bottom:3px">${h}</div>`).join('');
+      grid.forEach((row, di) => {
+        html += `<div style="display:flex;align-items:center;color:var(--muted);font-size:10px;padding-right:4px">${DAYS[di]}</div>`;
+        row.forEach(count => {
+          const alpha = count ? 0.15 + (count/max)*0.85 : 0.04;
+          const tip = count ? `${count} session${count>1?'s':''}` : 'none';
+          html += `<div title="${tip}" style="height:16px;border-radius:2px;background:rgba(34,211,238,${alpha.toFixed(2)});cursor:default"></div>`;
+        });
+      });
+      html += '</div>';
+      document.getElementById('heatmap').innerHTML = html;
+    })();
+
+    /* ── TOOL USAGE CHART ───────────────────── */
+    let _toolFilter = null;
+    const TOOL_COLORS = {Edit:'var(--green)',Read:'var(--accent)',Bash:'var(--orange)',Agent:'var(--purple)',Grep:'var(--cyan)',Glob:'var(--cyan)',Write:'var(--yellow)',WebFetch:'var(--red)'};
+    function toolColor(t) { for (const [k,v] of Object.entries(TOOL_COLORS)) if (t.startsWith(k)) return v; return 'var(--muted)'; }
+
+    function renderToolChart() {
+      const usage = D.tool_usage || {};
+      const top = Object.entries(usage).slice(0,15);
+      if (!top.length) { document.getElementById('tool-chart').innerHTML='<div class="empty">No tool data</div>'; return; }
+      const maxVal = top[0][1];
+      document.getElementById('tool-chart').innerHTML = top.map(([t,c]) => {
+        const pct = (c/maxVal*100).toFixed(1);
+        const active = _toolFilter === t ? 'outline:2px solid var(--accent);' : '';
+        return `<div onclick="setToolFilter('${t}')" style="display:flex;align-items:center;gap:8px;margin-bottom:5px;cursor:pointer;padding:3px 6px;border-radius:4px;${active}transition:background 0.15s" onmouseover="this.style.background='var(--b1)'" onmouseout="this.style.background=''">
+          <div style="width:80px;font-size:11px;color:var(--text);text-align:right;flex-shrink:0">${t}</div>
+          <div style="flex:1;background:var(--b1);border-radius:3px;height:12px"><div style="height:100%;border-radius:3px;background:${toolColor(t)};width:${pct}%;transition:width 0.3s"></div></div>
+          <div style="width:36px;font-size:10px;color:var(--muted);text-align:right">${c}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function setToolFilter(tool) {
+      _toolFilter = (_toolFilter === tool) ? null : tool;
+      document.getElementById('tool-filter-clear').style.display = _toolFilter ? 'inline-block' : 'none';
+      renderToolChart();
+      // Switch to overview tab and re-render sessions
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelector('.tab-btn[data-tab="overview"]').classList.add('active');
+      document.getElementById('tab-overview').classList.add('active');
+      renderSessionsWithToolFilter();
+    }
+
+    function clearToolFilter() {
+      _toolFilter = null;
+      document.getElementById('tool-filter-clear').style.display = 'none';
+      renderToolChart();
+      renderSessions();
+    }
+
+    function renderSessionsWithToolFilter() {
+      const filtered = _toolFilter
+        ? D.sessions.filter(s => (s.tool_counts || {})[_toolFilter])
+        : D.sessions;
+      renderSessions(null, filtered);
+    }
+
+    renderToolChart();
+
+    /* ── EXPORT ─────────────────────────────── */
+    function exportCSV() {
+      const headers = ['project','date','cost','duration_min','messages','agents','grade','model'];
+      const rows = D.sessions.map(s => {
+        const g = grade(s);
+        const topM = Object.entries(s.model_breakdown||{}).sort((a,b)=>b[1]-a[1])[0];
+        return [proj(s.project), (s.start_ts||'').slice(0,16), (s.total_cost||0).toFixed(4),
+          Math.round(s.duration_minutes||0), s.message_count||0, s.subagent_count||0, g, topM?modelKey(topM[0]):''].join(',');
+      });
+      const csv = [headers.join(','), ...rows].join('\n');
+      const a = document.createElement('a');
+      a.href = 'data:text/csv,' + encodeURIComponent(csv);
+      a.download = 'cc-sessions.csv';
+      a.click();
+    }
+
+    function copyJSON() {
+      navigator.clipboard.writeText(JSON.stringify(D, null, 2))
+        .then(() => { const b = document.querySelector('[onclick="copyJSON()"]'); b.textContent='✓ Copied'; setTimeout(()=>b.textContent='📋 JSON',2000); });
+    }
+
+    /* ── KEYBOARD SHORTCUTS ─────────────────── */
+    let _focusedSessIdx = -1;
+
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        if (e.key === 'Escape') { e.target.blur(); e.target.value = ''; renderSessions(); }
+        return;
+      }
+      const modal = document.getElementById('kbd-modal');
+      if (e.key === 'Escape') { modal.style.display = 'none'; return; }
+      if (e.key === '?') { modal.style.display = modal.style.display === 'none' ? 'flex' : 'none'; return; }
+      if (e.key === 'd') { toggleTheme(); return; }
+      if (e.key === '/') { e.preventDefault(); document.getElementById('sess-search')?.focus(); return; }
+      if (/^[1-4]$/.test(e.key)) {
+        const tabs = document.querySelectorAll('.tab-btn');
+        if (tabs[+e.key-1]) tabs[+e.key-1].click();
+        return;
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const items = document.querySelectorAll('#sessions .sess');
+        if (!items.length) return;
+        items[_focusedSessIdx]?.classList.remove('kbd-focus');
+        _focusedSessIdx = e.key === 'ArrowDown'
+          ? Math.min(_focusedSessIdx + 1, items.length - 1)
+          : Math.max(_focusedSessIdx - 1, 0);
+        const el = items[_focusedSessIdx];
+        el.classList.add('kbd-focus');
+        el.scrollIntoView({ block: 'nearest' });
+        return;
+      }
+      if (e.key === 'Enter') {
+        const items = document.querySelectorAll('#sessions .sess');
+        items[_focusedSessIdx]?.querySelector('.sess-detail')?.classList.toggle('open');
+        return;
+      }
+    });
 
   </script>
 </body>

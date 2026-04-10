@@ -9,6 +9,7 @@ Runs on 127.0.0.1:7731 as a background daemon.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import sys
@@ -16,13 +17,15 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-PORT = 7731
+PORT = int(os.environ.get("CC_RETROSPECT_PORT", "7731"))
 _data_dir: Path = Path.home() / ".cc-retrospect"
+logger = logging.getLogger("cc_retrospect.server")
 
 
 class _Handler(BaseHTTPRequestHandler):
-    def log_message(self, *args):
-        pass  # silence access logs
+    def log_message(self, fmt, *args):
+        if os.environ.get("CC_RETROSPECT_SERVER_LOG"):
+            logger.info(fmt, *args)
 
     def do_GET(self):
         p = urlparse(self.path).path
@@ -39,6 +42,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"config": _read_config()})
         elif p == "/api/reload":
             self._reload()
+        elif p == "/api/sessions":
+            self._reload_and_respond_sessions()
+        elif p == "/api/health":
+            self._json({"status": "ok", "port": PORT, "data_dir": str(_data_dir)})
         else:
             self.send_error(404)
 
@@ -70,8 +77,19 @@ class _Handler(BaseHTTPRequestHandler):
             data_json = generate_dashboard(cfg)
             (_data_dir / "data.js").write_text(f"const D = {data_json};\n", encoding="utf-8")
             self._json({"ok": True})
-        except Exception as e:
+        except (OSError, ImportError, ValueError) as e:
             self._json({"ok": False, "error": str(e)}, 500)
+
+    def _reload_and_respond_sessions(self):
+        try:
+            from cc_retrospect.config import load_config
+            from cc_retrospect.cache import load_all_sessions
+            cfg = load_config()
+            sessions = load_all_sessions(cfg)
+            data = [s.model_dump() for s in sessions[-100:]]
+            self._json({"sessions": data, "count": len(sessions)})
+        except (OSError, ImportError, ValueError) as e:
+            self._json({"error": str(e)}, 500)
 
     def _file(self, path: Path, mime: str):
         if not path.exists():
@@ -82,6 +100,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", len(data))
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(data)
 
@@ -91,6 +110,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", len(body))
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
 
@@ -180,7 +200,7 @@ def stop_server():
     try:
         pid = int(p.read_text().strip())
         os.kill(pid, signal.SIGTERM)
-    except Exception:
+    except (ValueError, ProcessLookupError, PermissionError, OSError):
         pass
     p.unlink(missing_ok=True)
 
@@ -196,4 +216,10 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         _data_dir = Path(sys.argv[1])
     httpd = HTTPServer(("127.0.0.1", PORT), _Handler)
+    def _shutdown(sig, frame):
+        httpd.shutdown()
+        pid_file().unlink(missing_ok=True)
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
     httpd.serve_forever()

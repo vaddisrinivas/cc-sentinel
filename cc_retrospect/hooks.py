@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shlex
 import subprocess
 import sys
 from collections import defaultdict
@@ -39,12 +40,13 @@ def _run_custom_scripts(config, event: str, env_vars: dict[str, str]) -> None:
         try:
             if expanded.startswith("notify:"):
                 msg = expanded[7:].strip()
+                msg = msg.replace('"', '\\"')
                 subprocess.run(["osascript", "-e", f'display notification "{msg}" with title "cc-retrospect"'], timeout=config.scripts.timeout_seconds, capture_output=True, text=True)
             else:
-                subprocess.run(expanded, shell=True, env=env, timeout=config.scripts.timeout_seconds, capture_output=True, text=True)
+                subprocess.run(shlex.split(expanded), shell=False, env=env, timeout=config.scripts.timeout_seconds, capture_output=True, text=True)
         except subprocess.TimeoutExpired:
             logger.warning("Custom script timed out: %s", cmd)
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             logger.debug("Custom script failed: %s: %s", cmd, e)
 
 
@@ -183,7 +185,7 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
     if index_path.exists():
         try:
             existing_ids = set(index_path.read_text(encoding="utf-8").splitlines())
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.debug("Failed to read sessions index: %s", e)
     if summary.session_id not in existing_ids:
         with open(cache_path, "a", encoding="utf-8") as f:
@@ -216,10 +218,11 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
                     if (s.start_ts or "")[:10] == today:
                         today_cost += s.total_cost
                         projects_today[s.project] = projects_today.get(s.project, 0) + s.total_cost
-                except Exception:
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.debug("Skipping malformed cache entry: %s", e)
                     continue
-    except Exception:
-        pass
+    except (OSError, json.JSONDecodeError) as e:
+        logger.debug("Failed to read cache for today's cost: %s", e)
     # Include current session if not yet written to cache
     if summary.session_id not in existing_ids:
         if (summary.start_ts or "")[:10] == today:
@@ -265,7 +268,7 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
         }
         rec_path = config.data_dir / "model_recommendation.json"
         _atomic_write_json(rec_path, recommendation)
-    except Exception as e:
+    except (OSError, TypeError) as e:
         logger.debug("Failed to write model recommendation: %s", e)
 
     # Write waste entries to LATER.md if enabled
@@ -279,7 +282,7 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
             waste_entry = f"- [{timestamp}] cc-retrospect: {', '.join(waste_flags)} [cc-retrospect auto]\n"
             later_content += waste_entry
             later_path.write_text(later_content, encoding="utf-8")
-        except Exception as e:
+        except (OSError, TypeError) as e:
             logger.debug("Failed to write to LATER.md: %s", e)
 
     # Auto-refresh LEARNINGS.md periodically
@@ -295,13 +298,13 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
             state["session_count_since_learn"] = 0
             state["last_learn_refresh"] = datetime.now(timezone.utc).isoformat()
             logger.info("Auto-refreshed STYLE.md and LEARNINGS.md after %d sessions", session_count)
-        except Exception as e:
+        except (OSError, ImportError) as e:
             logger.debug("Auto-refresh learn failed: %s", e)
 
     # Persist all state mutations
     try:
         _atomic_write_json(state_path, state)
-    except Exception as e:
+    except OSError as e:
         logger.debug("Failed to write state.json: %s", e)
 
     # Multi-tier budget alerts
@@ -319,7 +322,7 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
     state["budget_alerts_today"] = list(alerted_today)
     # Update weekly trends
     try: _update_trends(config)
-    except Exception as e: logger.debug("Trend update failed: %s", e)
+    except (OSError, ValueError) as e: logger.debug("Trend update failed: %s", e)
     # Custom scripts
     if waste_flags:
         _run_custom_scripts(config, "on_waste_detected", {"CC_WASTE_FLAGS": "; ".join(waste_flags), "CC_PROJECT": summary.project})
@@ -346,9 +349,9 @@ def run_session_start_hook(payload: dict, *, config: Config | None = None) -> in
             state = {"first_run": datetime.now(timezone.utc).isoformat()}
             try:
                 _atomic_write_json(state_path, state)
-            except Exception as e:
+            except OSError as e:
                 logger.debug("Failed to write initial state: %s", e)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.debug("First-run onboarding failed: %s", e)
         _init_live_state(config)
         return 0
@@ -417,9 +420,9 @@ def run_session_start_hook(payload: dict, *, config: Config | None = None) -> in
             state["last_health_date"] = today
             try:
                 _atomic_write_json(state_path, state)
-            except Exception as e:
+            except OSError as e:
                 logger.debug("Failed to write state after health check: %s", e)
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.debug("Daily health check failed: %s", e)
 
     # Daily digest: first session of a new day gets yesterday's summary
@@ -439,7 +442,7 @@ def run_session_start_hook(payload: dict, *, config: Config | None = None) -> in
                                   if not any(t in s.tool_counts for t in {"Agent", "EnterPlanMode", "WebSearch", "WebFetch"}))
                 if opus_simple > 10:
                     lines.append(m.digest_model_tip.format(cost=_fmt_cost(opus_simple)))
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.debug("Daily digest failed: %s", e)
     if lines and config.hints.session_start:
         print(f"{m.prefix} " + " ".join(lines))
@@ -461,7 +464,7 @@ def run_pre_tool_use(payload: dict, *, config: Config | None = None) -> int:
                 domain = urlparse(url).netloc
                 if any(wd in domain for wd in config.thresholds.waste_webfetch_domains):
                     hints.append(config.messages.hint_webfetch_github.format(domain=domain))
-            except Exception as e:
+            except (ValueError, AttributeError) as e:
                 logger.debug("urlparse failed for WebFetch URL in pre_tool_use: %s", e)
     if tool_name == "Agent":
         prompt = tool_input.get("prompt", "")

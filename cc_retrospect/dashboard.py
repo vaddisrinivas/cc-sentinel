@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 import sys
 import webbrowser
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cc_retrospect.config import Config, load_config
@@ -38,12 +39,27 @@ def _load_json(path: Path) -> dict:
 
 
 def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
-    """Generate dashboard HTML string with embedded data."""
+    """Generate dashboard JSON string with embedded data."""
+    try:
+        return _build_dashboard_data(config, days)
+    except Exception as e:
+        return json.dumps({
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "error": str(e),
+            "state": {}, "sessions": [], "trends": [], "compactions": [],
+            "budget_tiers": [], "days": days, "reports": [],
+            "tool_usage": {}, "hourly_activity": [0]*24, "cost_by_day": {},
+            "model_recommendation": {},
+        }, default=str)
+
+
+def _build_dashboard_data(config: Config | None = None, days: int = 30) -> str:
+    """Build dashboard data JSON string."""
     config = config or load_config()
 
     from cc_retrospect.utils import _filter_sessions
-    all_sessions = load_all_sessions(config)
-    all_sessions = _filter_sessions(all_sessions, days=days, config=config)
+    all_sessions_unfiltered = load_all_sessions(config)
+    all_sessions = _filter_sessions(all_sessions_unfiltered, days=days, config=config)
     # Sort by date descending and exclude noise
     sessions = sorted(
         [s for s in all_sessions if s.start_ts],
@@ -55,9 +71,7 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
     compactions = _load_jsonl(config.data_dir / "compactions.jsonl")
 
     # Calculate today's cost from full session data (not state.json which only covers hook-fired sessions)
-    from datetime import timezone
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    all_sessions_unfiltered = load_all_sessions(config)
     today_cost = sum(
         s.total_cost for s in all_sessions_unfiltered
         if (s.start_ts or "")[:10] == today_str
@@ -94,6 +108,31 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
                 "data_url": f"/reports/{data_name}" if (reports_dir / data_name).exists() else None,
             })
 
+    # Aggregate: tool usage
+    tool_usage: dict[str, int] = {}
+    for s in sessions:
+        for tool, count in (s.tool_counts or {}).items():
+            tool_usage[tool] = tool_usage.get(tool, 0) + count
+
+    # Aggregate: hourly activity (24 buckets)
+    hourly_activity = [0] * 24
+    for s in sessions:
+        if s.start_ts:
+            try:
+                hour = int(s.start_ts[11:13])
+                hourly_activity[hour] += 1
+            except (ValueError, IndexError):
+                pass
+
+    # Aggregate: cost by day
+    cost_by_day: dict[str, float] = defaultdict(float)
+    for s in sessions:
+        day = (s.start_ts or "")[:10]
+        if day:
+            cost_by_day[day] += s.total_cost
+
+    model_rec = _load_json(config.data_dir / "model_recommendation.json")
+
     data = {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "state": state,
@@ -103,6 +142,10 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
         "budget_tiers": budget_tiers,
         "days": days,
         "reports": reports,
+        "tool_usage": dict(sorted(tool_usage.items(), key=lambda x: -x[1])[:20]),
+        "hourly_activity": hourly_activity,
+        "cost_by_day": dict(sorted(cost_by_day.items())),
+        "model_recommendation": model_rec,
     }
 
     data_json = json.dumps(data, default=str)
