@@ -2180,32 +2180,13 @@
 
     function loadReport(idx) {
       const r = (D.reports || [])[idx];
-      if (!r || !r.data_url) return;
-
-      // Remove any previously injected report script
-      const old = document.getElementById('report-data-script');
-      if (old) old.remove();
-
-      const script = document.createElement('script');
-      script.id = 'report-data-script';
-      script.src = r.data_url + '?t=' + Date.now();
-      script.onload = () => {
-        // Show loaded badge
-        document.querySelectorAll('[id^="loaded-badge-"]').forEach(b => b.style.display = 'none');
-        const badge = document.getElementById('loaded-badge-' + idx);
-        if (badge) badge.style.display = 'inline-flex';
-
-        // Navigate to overview and re-render with new D
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        document.querySelector('.tab-btn[data-tab="overview"]').classList.add('active');
-        document.getElementById('tab-overview').classList.add('active');
-        // Note: full re-render would require refactoring all init code into functions.
-        // For now we reload with the data URL as a hint.
-        alert('Report data loaded. Reload the page to see it reflected in charts.\n\nTip: open ' + r.html_url + ' directly for the full snapshot.');
-      };
-      script.onerror = () => alert('Failed to load report data from: ' + r.data_url);
-      document.head.appendChild(script);
+      if (!r) return;
+      const url = r.html_url || r.data_url;
+      if (!url) return;
+      window.open(url, '_blank');
+      document.querySelectorAll('[id^="loaded-badge-"]').forEach(b => b.style.display = 'none');
+      const badge = document.getElementById('loaded-badge-' + idx);
+      if (badge) badge.style.display = 'inline-flex';
     }
 
 
