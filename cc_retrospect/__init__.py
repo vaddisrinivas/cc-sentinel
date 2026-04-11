@@ -1,6 +1,10 @@
 """cc-retrospect — Claude Code session analysis plugin."""
 
-__version__ = "2.2.0"
+try:
+    from importlib.metadata import version as _pkg_version
+    __version__ = _pkg_version("cc-retrospect")
+except Exception:
+    __version__ = "2.9.0"
 
 try:
     from cc_retrospect.core import (  # noqa: F401

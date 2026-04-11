@@ -58,6 +58,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._file(worker, "application/javascript")
         elif p == "/api/insights":
             self._get_insights()
+        elif p == "/api/config/structured":
+            self._structured_config()
         else:
             self.send_error(404)
 
@@ -72,6 +74,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._reload()
         elif p == "/api/insights/generate":
             self._trigger_insights()
+        elif p == "/api/config/structured":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length))
+            self._update_structured_config(body)
         else:
             self.send_error(404)
 
@@ -133,6 +139,65 @@ class _Handler(BaseHTTPRequestHandler):
         t.start()
         self._json({"ok": True, "message": "Generating insights in background (1-2 min)…"})
 
+    def _structured_config(self):
+        try:
+            from cc_retrospect.config import load_config
+            cfg = load_config()
+            data = {
+                "pricing": {
+                    "opus": cfg.pricing.opus.model_dump(),
+                    "sonnet": cfg.pricing.sonnet.model_dump(),
+                    "haiku": cfg.pricing.haiku.model_dump(),
+                },
+                "thresholds": {k: v for k, v in cfg.thresholds.model_dump().items() if k not in ("frustration_keywords", "waste_webfetch_domains")},
+                "hints": cfg.hints.model_dump(),
+                "budget": {
+                    "warning": cfg.budget.warning.model_dump(),
+                    "critical": cfg.budget.critical.model_dump(),
+                    "severe": cfg.budget.severe.model_dump(),
+                },
+            }
+            self._json(data)
+        except (ImportError, OSError, ValueError) as e:
+            self._json({"error": str(e)}, 500)
+
+    def _update_structured_config(self, updates: dict):
+        """Apply partial config updates by writing them as config.env lines."""
+        lines = []
+        config_path = _data_dir / "config.env"
+        if config_path.exists():
+            lines = config_path.read_text(encoding="utf-8").splitlines()
+
+        # Map structured keys to env var format
+        for section, values in updates.items():
+            if isinstance(values, dict):
+                for key, val in values.items():
+                    if isinstance(val, dict):
+                        for subkey, subval in val.items():
+                            env_key = f"{section.upper()}__{key.upper()}__{subkey.upper()}"
+                            # Update existing or append
+                            found = False
+                            for i, line in enumerate(lines):
+                                if line.strip().startswith(env_key + "="):
+                                    lines[i] = f"{env_key}={subval}"
+                                    found = True
+                                    break
+                            if not found:
+                                lines.append(f"{env_key}={subval}")
+                    else:
+                        env_key = f"{section.upper()}__{key.upper()}"
+                        found = False
+                        for i, line in enumerate(lines):
+                            if line.strip().startswith(env_key + "="):
+                                lines[i] = f"{env_key}={val}"
+                                found = True
+                                break
+                        if not found:
+                            lines.append(f"{env_key}={val}")
+
+        config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self._json({"ok": True})
+
     def _file(self, path: Path, mime: str):
         if not path.exists():
             self.send_error(404)
@@ -175,13 +240,22 @@ def _run_insights_background() -> None:
         if content:
             cache.write_text(json.dumps({"content": content, "ts": time.time()}), encoding="utf-8")
             logger.info("Insights cached (%d chars)", len(content))
+            # Also persist to dated insights file
+            insights_dir = _data_dir / "insights"
+            insights_dir.mkdir(exist_ok=True)
+            dated_path = insights_dir / f"{time.strftime('%Y-%m-%d')}.json"
+            dated_path.write_text(json.dumps({
+                "content": content,
+                "ts": time.time(),
+                "source": "claude-ai",
+            }), encoding="utf-8")
         else:
             logger.warning("claude -p returned empty output")
     except subprocess.TimeoutExpired:
         logger.warning("claude -p timed out after 5 min")
     except FileNotFoundError:
         logger.warning("claude CLI not found — insights unavailable")
-    except (OSError, Exception) as e:
+    except (OSError, subprocess.SubprocessError) as e:
         logger.warning("Insights generation failed: %s", e)
     finally:
         with _insights_lock:

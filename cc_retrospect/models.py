@@ -15,6 +15,16 @@ class UsageRecord(BaseModel):
     entrypoint: str = ""; cwd: str = ""; git_branch: str = ""
 
 
+# --- Tool call ---
+
+class ToolCall(BaseModel):
+    name: str = ""
+    input_summary: str = ""
+    output_snippet: str = ""
+    is_error: bool = False
+    ts: str = ""
+
+
 # --- Session model + analysis ---
 
 class SessionSummary(BaseModel):
@@ -28,6 +38,7 @@ class SessionSummary(BaseModel):
     subagent_count: int = 0; mega_prompt_count: int = 0
     frustration_count: int = 0; frustration_words: dict[str, int] = {}
     webfetch_domains: dict[str, int] = {}
+    tool_calls: list[ToolCall] = []
     entrypoint: str = ""; cwd: str = ""; git_branch: str = ""
 
 
@@ -96,6 +107,7 @@ class LiveSessionState(BaseModel):
     prev_tool: str = ""; chain_length: int = 0; webfetch_github_count: int = 0
     subagent_count: int = 0; bash_chain_warned: bool = False
     compact_nudged: bool = False; compact_nudged_2: bool = False; subagent_warned: bool = False
+    auto_compacted: bool = False; model_nudge_shown: bool = False
     compaction_count: int = 0; mega_prompt_count: int = 0
     last_prompt_ts: str = ""; rapid_fire_count: int = 0; rapid_fire_warned: bool = False
 

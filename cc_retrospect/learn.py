@@ -305,6 +305,37 @@ def generate_style(profile: UserProfile, config=None) -> str:
         lines.append("## Custom Rules")
         lines.extend(sc.custom_rules)
 
+    # Effective Patterns section (from stored insights + chains)
+    if "effective_patterns" in enabled:
+        patterns_lines = []
+        try:
+            from pathlib import Path
+            import json as _json
+            data_dir = Path.home() / ".cc-retrospect"
+            # Read latest insights
+            insights_dir = data_dir / "insights"
+            if insights_dir.exists():
+                insight_files = sorted(insights_dir.glob("*.json"), reverse=True)
+                if insight_files:
+                    latest = _json.loads(insight_files[0].read_text())
+                    content = latest.get("content", "")
+                    # Extract key patterns from insights (first 3 bullet points)
+                    for line in content.split("\n"):
+                        line = line.strip()
+                        if line.startswith(("- ", "* ", "• ")) and len(patterns_lines) < 3:
+                            patterns_lines.append(line)
+            # Read chains data
+            chains_dir = data_dir / "chains"
+            if chains_dir and chains_dir.exists():
+                for chain_file in sorted(chains_dir.glob("*.md"))[:3]:
+                    patterns_lines.append(f"- Chain pattern: {chain_file.stem}")
+        except (OSError, ValueError, ImportError):
+            pass
+        if patterns_lines:
+            lines.append("")
+            lines.append("## Effective Patterns")
+            lines.extend(patterns_lines)
+
     return "\n".join(lines) + "\n"
 
 

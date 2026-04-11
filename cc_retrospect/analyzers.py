@@ -393,6 +393,7 @@ _BUILTIN_ANALYZERS = [CostAnalyzer, HabitsAnalyzer, HealthAnalyzer, WasteAnalyze
 
 
 def get_analyzers(config: Config) -> list:
+    """Return all registered analyzers (builtin + custom from data_dir/analyzers/)."""
     analyzers = [cls() for cls in _BUILTIN_ANALYZERS]
     custom_dir = config.data_dir / "analyzers"
     if not custom_dir.is_dir():
@@ -408,6 +409,6 @@ def get_analyzers(config: Config) -> list:
                     attr = getattr(mod, name)
                     if isinstance(attr, type) and all(hasattr(attr, x) for x in ("name", "description", "analyze")):
                         analyzers.append(attr())
-        except Exception as e:
+        except (OSError, ImportError, AttributeError, SyntaxError) as e:
             logger.warning("Failed to load custom analyzer from %s: %s", py_file, e)
     return analyzers

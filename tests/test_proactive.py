@@ -110,7 +110,7 @@ class TestPostToolUse:
         from cc_retrospect.core import run_post_tool_use, _init_live_state, _load_live_state, _save_live_state
         _init_live_state(config)
         live = _load_live_state(config)
-        live["subagent_count"] = 9  # one below threshold
+        live["subagent_count"] = 7  # one below threshold (default max=8)
         _save_live_state(config, live)
 
         with patch("cc_retrospect.hooks.load_config", return_value=config):
@@ -189,5 +189,5 @@ class TestDispatcher:
                     "pre_compact", "post_compact", "user_prompt",
                     "cost", "habits", "health", "tips", "report", "compare", "waste", "hints",
                     "savings", "model", "digest", "status", "export", "trends", "learn",
-                    "reset", "config", "uninstall", "all", "dashboard"}
+                    "reset", "config", "uninstall", "all", "dashboard", "chains"}
         assert expected == set(dispatch._DISPATCH.keys())

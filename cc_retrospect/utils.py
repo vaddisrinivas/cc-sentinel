@@ -34,7 +34,7 @@ def _fmt_duration(minutes: float) -> str:
     return f"{minutes:.0f}m"
 
 
-def _group(sessions: list[SessionSummary], key_fn, val_fn=lambda s: s.total_cost) -> dict:
+def _group(sessions: list[SessionSummary], key_fn, val_fn=lambda s: s.total_cost) -> dict[str, float]:
     out: dict = {}
     for s in sessions:
         key = key_fn(s)
@@ -44,7 +44,7 @@ def _group(sessions: list[SessionSummary], key_fn, val_fn=lambda s: s.total_cost
     return out
 
 
-def _top(d: dict, n: int = 10) -> list:
+def _top(d: dict, n: int = 10) -> list[tuple[str, float]]:
     return sorted(d.items(), key=lambda x: x[1], reverse=True)[:n]
 
 

@@ -1564,6 +1564,27 @@
       .grade-chips { overflow-x: auto; flex-wrap: nowrap; }
       .btn-theme, [onclick="exportCSV()"], [onclick="copyJSON()"] { display: none; }
     }
+
+    /* ── v2.9 ACTION CHIPS ──────────────────────────────── */
+    .action-chip { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; background:var(--s3); border:1px solid var(--b2); border-radius:10px; font-size:12px; color:var(--text); margin:4px; }
+    .action-chip.warning { border-color:var(--yellow); background:var(--yellow-bg); }
+    .action-chip.error { border-color:var(--red); background:var(--red-bg); }
+    .action-chip.info { border-color:var(--accent); background:var(--blue-bg); }
+    .chip-savings { font-weight:600; color:var(--green); font-size:11px; }
+
+    /* ── v2.9 WOW BADGES ────────────────────────────────── */
+    .wow-badge { display:inline-flex; flex-direction:column; align-items:center; padding:6px 12px; background:var(--s2); border-radius:8px; margin:4px; min-width:80px; }
+    .wow-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; }
+    .wow-arrow { font-size:14px; font-weight:700; }
+
+    /* ── v2.9 HERO BAR ──────────────────────────────────── */
+    .hero-bar { display:flex; align-items:center; gap:24px; padding:20px; background:var(--s2); border:1px solid var(--b2); border-radius:14px; margin-bottom:16px; flex-wrap:wrap; }
+    .hero-stat { text-align:center; }
+    .hero-stat .hero-val { font-size:28px; font-weight:700; color:var(--text); font-family:var(--font-mono); }
+    .hero-stat .hero-lbl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
+
+    /* ── v2.9 ZONE TITLES ───────────────────────────────── */
+    .zone-title { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; color:var(--dim); margin:24px 0 12px; padding-left:2px; }
   </style>
 </head>
 
@@ -1593,8 +1614,8 @@
     <!-- TAB NAV -->
     <nav class="tab-nav">
       <button class="tab-btn active" data-tab="overview">Overview</button>
+      <button class="tab-btn" data-tab="insights">Insights &amp; Reports</button>
       <button class="tab-btn" data-tab="compare">Compare</button>
-      <button class="tab-btn" data-tab="reports">Reports</button>
       <button class="tab-btn" data-tab="config">Config</button>
       <button class="tab-btn" data-tab="profile">Profile</button>
     </nav>
@@ -1602,37 +1623,36 @@
     <!-- ══ OVERVIEW TAB ══════════════════════════════════════ -->
     <div class="tab-panel active" id="tab-overview">
 
-      <!-- AI INSIGHTS (lazy-loaded) -->
-      <div id="ai-insights-wrap" style="margin-bottom:20px;display:none">
-        <div class="card" style="--card-accent:var(--purple)">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-            <div class="card-title" style="margin:0">🤖 AI Insights <span id="ai-insights-age" style="font-size:10px;color:var(--muted);font-weight:400"></span></div>
-            <button class="btn-refresh" id="ai-insights-btn" onclick="generateInsights()">✨ Refresh</button>
-          </div>
-          <div id="ai-insights-content" style="font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap;max-height:400px;overflow-y:auto"></div>
+      <!-- ZONE 1: RIGHT NOW (above the fold) -->
+      <div class="zone-title">Right Now</div>
+
+      <!-- HERO BAR -->
+      <div class="hero-bar">
+        <div class="hero-stat">
+          <div class="hero-val" id="hero-today-cost">$0.00</div>
+          <div class="hero-lbl">Today's Cost</div>
+        </div>
+        <div id="grade-streak" style="display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
+        <div class="hero-stat">
+          <div class="hero-val" id="hero-streak-days" style="color:var(--orange)">—</div>
+          <div class="hero-lbl">Streak Days</div>
         </div>
       </div>
 
-      <!-- BUDGET -->
+      <!-- ACTION CHIPS -->
+      <div id="action-chips" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:0"></div>
+
+      <!-- BUDGET (horizontal progress bar inline) -->
       <div class="budget" id="budget"></div>
 
-      <!-- STATS -->
-      <div class="stats" id="stats"></div>
-      <div id="wow-insight" style="margin-bottom:20px"></div>
+      <!-- WOW DELTA BADGES -->
+      <div id="wow-badges" style="margin-bottom:20px;display:flex;flex-wrap:wrap;gap:0"></div>
 
-      <!-- GRID -->
+      <!-- ZONE 2: YOUR WEEK -->
+      <div class="zone-title">Your Week</div>
+
+      <!-- GRID: daily chart + model donut -->
       <div class="grid">
-        <div class="card" style="--card-accent:var(--yellow)">
-          <div class="card-title">Interventions</div>
-          <div id="interventions"></div>
-        </div>
-        <div class="card" style="--card-accent:var(--purple)">
-          <div class="card-title">Model Cost Split</div>
-          <div id="model-legend"
-            style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;font-size:12px;color:var(--muted)"></div>
-          <div style="position:relative;height:200px"><canvas id="model-chart" role="img"
-              aria-label="Model cost donut chart"></canvas></div>
-        </div>
         <div class="card full" style="--card-accent:var(--accent)">
           <div class="card-title">Daily Cost</div>
           <div id="cost-legend"
@@ -1649,6 +1669,7 @@
             <input id="sess-search" class="sess-search" placeholder="filter project…" oninput="renderSessions()">
             <div class="grade-chips" id="grade-chips"></div>
             <select id="sess-sort" class="sess-sort" onchange="renderSessions()">
+              <option value="grade">↓ Grade</option>
               <option value="date">↓ Date</option>
               <option value="cost">↓ Cost</option>
               <option value="dur">↓ Duration</option>
@@ -1661,19 +1682,22 @@
             <button id="sess-more" class="btn-show-all" onclick="showAllSessions()">Show all</button>
           </div>
         </div>
+        <div class="card" style="--card-accent:var(--purple)">
+          <div class="card-title">Model Cost Split</div>
+          <div id="model-legend"
+            style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;font-size:12px;color:var(--muted)"></div>
+          <div style="position:relative;height:200px"><canvas id="model-chart" role="img"
+              aria-label="Model cost donut chart"></canvas></div>
+        </div>
+        <!-- STATS -->
         <div class="card" style="--card-accent:var(--cyan)">
-          <div class="card-title">Compaction Events</div>
-          <div class="compact-timeline" id="compactions"></div>
-        </div>
-        <div class="card" style="--card-accent:var(--accent)">
-          <div class="card-title">Weekly Trends</div>
-          <div id="trends"></div>
-        </div>
-        <div class="card full" style="--card-accent:var(--red)">
-          <div class="card-title">Frustration Triggers</div>
-          <div class="frust-wrap" id="frustrations"></div>
+          <div class="card-title">Session Stats</div>
+          <div class="stats" id="stats" style="margin:0;padding:0;background:none;border:none"></div>
         </div>
       </div>
+
+      <!-- ZONE 3: DEEP DIVE -->
+      <div class="zone-title">Deep Dive</div>
 
       <!-- HEATMAP -->
       <div class="card" style="margin-bottom:20px">
@@ -1687,6 +1711,21 @@
           <button id="tool-filter-clear" onclick="clearToolFilter()" style="display:none;float:right;font-size:10px;background:var(--b2);border:none;color:var(--text);padding:2px 8px;border-radius:4px;cursor:pointer">✕ Clear filter</button>
         </div>
         <div id="tool-chart"></div>
+      </div>
+
+      <div class="grid">
+        <div class="card full" style="--card-accent:var(--red)">
+          <div class="card-title">Frustration Triggers</div>
+          <div class="frust-wrap" id="frustrations"></div>
+        </div>
+        <div class="card" style="--card-accent:var(--cyan)">
+          <div class="card-title">Compaction Events</div>
+          <div class="compact-timeline" id="compactions"></div>
+        </div>
+        <div class="card" style="--card-accent:var(--accent)">
+          <div class="card-title">Weekly Trends</div>
+          <div id="trends"></div>
+        </div>
       </div>
 
     </div><!-- /overview -->
@@ -1721,13 +1760,27 @@
       <div class="compare-grid" id="cmp-sessions-grid" style="margin-top:20px"></div>
     </div><!-- /compare -->
 
-    <!-- ══ REPORTS TAB ════════════════════════════════════════ -->
-    <div class="tab-panel" id="tab-reports">
+    <!-- ══ INSIGHTS & REPORTS TAB ════════════════════════════ -->
+    <div class="tab-panel" id="tab-insights">
+
+      <!-- AI INSIGHTS -->
+      <div id="ai-insights-wrap" style="margin-bottom:20px">
+        <div class="card" style="--card-accent:var(--purple)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <div class="card-title" style="margin:0">🤖 AI Insights <span id="ai-insights-age" style="font-size:10px;color:var(--muted);font-weight:400"></span></div>
+            <button class="btn-refresh" id="ai-insights-btn" onclick="generateInsights()">✨ Refresh</button>
+          </div>
+          <div id="ai-insights-content" style="font-size:13px;color:var(--text);line-height:1.7;white-space:pre-wrap;max-height:400px;overflow-y:auto"></div>
+        </div>
+      </div>
+
+      <!-- SAVED REPORTS -->
       <div class="card full" style="--card-accent:var(--purple);margin-bottom:16px">
         <div class="card-title">Saved Reports</div>
         <div id="reports-list"></div>
       </div>
-    </div><!-- /reports -->
+
+    </div><!-- /insights -->
 
     <div class="tab-panel" id="tab-config">
       <div class="card full" style="--card-accent:var(--yellow);margin-bottom:16px">
@@ -1740,6 +1793,10 @@
         </div>
         <textarea id="cfg-editor" spellcheck="false" style="width:100%;height:320px;background:var(--s3);border:1px solid var(--b2);border-radius:8px;padding:12px;color:var(--text);font-family:var(--font-mono);font-size:12px;line-height:1.6;resize:vertical;outline:none"></textarea>
         <div style="margin-top:8px;font-size:11px;color:var(--dim)">Editing ~/.cc-retrospect/config.env — changes apply on next reload.</div>
+      </div>
+      <div class="card full" style="--card-accent:var(--yellow);margin-bottom:16px">
+        <div class="card-title">Interventions</div>
+        <div id="interventions"></div>
       </div>
     </div><!-- /config -->
 
@@ -1849,7 +1906,7 @@
     <div style="background:var(--s2);border:1px solid var(--b3);border-radius:12px;padding:24px;max-width:400px;width:90%">
       <div style="font-weight:600;margin-bottom:12px">Keyboard Shortcuts</div>
       <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:12px">
-        <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">1-4</kbd><span>Switch tabs</span>
+        <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">1-5</kbd><span>Switch tabs</span>
         <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">/</kbd><span>Focus search</span>
         <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">↑↓</kbd><span>Navigate sessions</span>
         <kbd style="background:var(--b2);padding:1px 6px;border-radius:3px">Enter</kbd><span>Expand/collapse session</span>
@@ -1984,35 +2041,7 @@
       el.appendChild(sparkEl);
     })();
 
-    /* ── WoW INSIGHT STRIP ──────────────────── */
-    (function() {
-      var P = D.profile || {};
-      if (!P.total_cost) return;
-      var lw=P.last_week_cost||0, tw=P.this_week_cost||0;
-      var ls=P.last_week_sessions||0, ts=P.this_week_sessions||0;
-      var lf=P.last_week_frust||0, tf=P.this_week_frust||0;
-      var ld=P.last_week_avg_dur||0, td=P.this_week_avg_dur||0;
-      function pctDelta(b, a) { return b > 0 ? (a - b) / b * 100 : 0; }
-      var metrics = [
-        {label:'Cost', pct: pctDelta(lw,tw), fmt: '$'+Math.round(tw), invert:true, emoji:'💸'},
-        {label:'Sessions', pct: pctDelta(ls,ts), fmt: ts+' sess', invert:false, emoji:'🔁'},
-        {label:'Avg Dur', pct: pctDelta(ld,td), fmt: td+'m', invert:true, emoji:'⏱'},
-        {label:'Frustrations', pct: pctDelta(lf,tf), fmt: tf+' frust', invert:true, emoji:'😤'},
-      ];
-      var items = metrics.map(function(m) {
-        var dir = m.pct > 0 ? '↑' : m.pct < 0 ? '↓' : '—';
-        var good = m.invert ? m.pct <= 0 : m.pct >= 0;
-        var color = Math.abs(m.pct) < 1 ? 'var(--muted)' : good ? 'var(--green)' : 'var(--red)';
-        var bg = Math.abs(m.pct) < 1 ? 'rgba(255,255,255,.02)' : good ? 'rgba(16,217,138,.06)' : 'rgba(244,63,94,.07)';
-        return '<div style="flex:1;min-width:120px;padding:10px 14px;background:'+bg+';border-radius:10px;border:1px solid rgba(255,255,255,.06)">' +
-          '<div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px">'+m.emoji+' '+m.label+'</div>' +
-          '<div style="font-family:JetBrains Mono,monospace;font-size:18px;font-weight:700;color:var(--text);letter-spacing:-.5px">'+m.fmt+'</div>' +
-          '<div style="font-size:11px;color:'+color+';font-weight:600;margin-top:2px">'+dir+Math.abs(m.pct).toFixed(0)+'% vs last week</div>' +
-          '</div>';
-      }).join('');
-      var el = document.getElementById('wow-insight');
-      if (el) el.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap">' + items + '</div>';
-    })();
+    /* ── WoW INSIGHT STRIP — replaced by renderWoWBadges() in v2.9 ── */
 
     /* ── STATS ──────────────────────────────── */
     (function () {
@@ -2295,7 +2324,9 @@
         return true;
       });
 
+      const gradeOrder = {A:0,B:1,C:2,D:3};
       const sortFns = {
+        grade: (a, b) => (gradeOrder[grade(a)]||0) - (gradeOrder[grade(b)]||0),
         date: (a, b) => (b.start_ts || '').localeCompare(a.start_ts || ''),
         cost: (a, b) => (b.total_cost || 0) - (a.total_cost || 0),
         dur: (a, b) => (b.duration_minutes || 0) - (a.duration_minutes || 0),
@@ -2391,6 +2422,55 @@
       ).join('');
     })();
 
+    /* ── v2.9 HERO BAR INIT ─────────────────── */
+    (function() {
+      const cost = D.state?.today_cost || 0;
+      const heroEl = document.getElementById('hero-today-cost');
+      if (heroEl) countUp(heroEl, cost, '$', '', 2);
+      const P = D.profile || {};
+      const streakEl = document.getElementById('hero-streak-days');
+      if (streakEl) streakEl.textContent = P.streak_days || '—';
+    })();
+
+    /* ── v2.9 RENDER ACTION CHIPS ───────────── */
+    function renderActionChips() {
+      const el = document.getElementById('action-chips');
+      if (!el || !D.action_chips?.length) return;
+      el.innerHTML = D.action_chips.map(c =>
+        `<div class="action-chip ${c.severity}">
+          <span class="chip-text">${c.text}</span>
+          <span class="chip-savings">${c.savings}</span>
+        </div>`
+      ).join('');
+    }
+
+    /* ── v2.9 RENDER GRADE STREAK ───────────── */
+    function renderGradeStreak() {
+      const el = document.getElementById('grade-streak');
+      if (!el || !D.grade_streak) return;
+      const colors = {A:'var(--green)',B:'var(--accent)',C:'var(--yellow)',D:'var(--red)'};
+      el.innerHTML = D.grade_streak.split('').slice(-10).map(g =>
+        `<span style="color:${colors[g]||'var(--muted)'};font-weight:700;font-size:18px;margin:0 2px">${g}</span>`
+      ).join('');
+    }
+
+    /* ── v2.9 RENDER WOW BADGES ─────────────── */
+    function renderWoWBadges() {
+      const el = document.getElementById('wow-badges');
+      if (!el || !D.wow_deltas) return;
+      const labels = {cost:'Cost',sessions:'Sessions',frustrations:'Frustrations',avg_duration:'Avg Duration'};
+      const fmts = {cost:v=>'$'+v.toFixed(0),sessions:v=>v,frustrations:v=>v,avg_duration:v=>v+'m'};
+      el.innerHTML = Object.entries(D.wow_deltas).map(([k,v]) => {
+        const arrow = v.direction==='up'?'↑':v.direction==='down'?'↓':'→';
+        const color = k==='cost'||k==='frustrations' ? (v.direction==='up'?'var(--red)':'var(--green)') : (v.direction==='up'?'var(--green)':'var(--red)');
+        return `<div class="wow-badge"><span class="wow-label">${labels[k]}</span><span class="wow-arrow" style="color:${color}">${arrow}${Math.abs(v.delta_pct).toFixed(0)}%</span></div>`;
+      }).join('');
+    }
+
+    renderActionChips();
+    renderGradeStreak();
+    renderWoWBadges();
+
     /* ── TAB NAVIGATION ─────────────────────── */
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2399,7 +2479,7 @@
         btn.classList.add('active');
         document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
         if (btn.dataset.tab === 'compare') initCompare();
-        if (btn.dataset.tab === 'reports') renderReports();
+        if (btn.dataset.tab === 'insights') renderReports();
         if (btn.dataset.tab === 'config') initConfig();
         if (btn.dataset.tab === 'profile') initProfile();
       });
@@ -2913,25 +2993,21 @@
     /* ── AI INSIGHTS ────────────────────────── */
     function loadInsights() {
       fetch('/api/insights').then(r => r.json()).then(function(d) {
-        var wrap = document.getElementById('ai-insights-wrap');
         var el = document.getElementById('ai-insights-content');
         var age = document.getElementById('ai-insights-age');
         var btn = document.getElementById('ai-insights-btn');
-        if (!wrap) return;
+        if (!el) return;
         if (d.status === 'empty') {
-          wrap.style.display = 'block';
           el.textContent = 'No insights yet. Click ✨ Refresh to generate (uses Claude, cached 1 week).';
-          age.textContent = '';
+          if (age) age.textContent = '';
           return;
         }
-        wrap.style.display = 'block';
         el.textContent = d.content || '';
-        if (d.age_days !== null) {
+        if (age && d.age_days !== null) {
           age.textContent = d.status === 'stale' ? '(stale — ' + d.age_days + 'd old)' : '(' + d.age_days + 'd ago)';
         }
         if (d.generating) {
-          btn.textContent = '⏳ Generating…';
-          btn.disabled = true;
+          if (btn) { btn.textContent = '⏳ Generating…'; btn.disabled = true; }
           setTimeout(loadInsights, 5000);
         }
       }).catch(function() {});

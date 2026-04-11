@@ -695,6 +695,7 @@ class TestDispatchRouting:
             "reset", "config", "uninstall",
             "all",
             "dashboard",
+            "chains",
         }
         assert expected == set(dispatch._DISPATCH.keys())
 

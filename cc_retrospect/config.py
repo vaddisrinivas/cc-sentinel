@@ -71,7 +71,7 @@ class MessagesConfig(BaseModel):
     hint_agent_simple: str = "This looks like a simple search — try Grep or Glob directly to save a subagent spawn."
     hint_bash_chain: str = "Multiple consecutive Bash calls — consider combining with && or writing a script."
     hint_compact_first: str = "Session at {count}+ tool calls. Context is growing expensive — consider /compact or starting fresh."
-    hint_compact_second: str = "Session at {count}+ tool calls. Strongly recommend /compact — each message re-reads the full history."
+    hint_compact_second: str = "⚠️ Session at {count}+ tool calls. You MUST run /compact now before continuing. Context bloat is wasting tokens on every message."
     hint_subagent_limit: str = "You've spawned {count} subagents this session. Each loads the full system context. Try Grep/Read for simple lookups."
     hint_mega_paste: str = "Large paste detected ({chars} chars). Consider writing to a temp file and referencing it — saves tokens on every future turn."
     hint_mega_long: str = "Very long prompt ({chars} chars). This inflates conversation history. Consider using a file reference."

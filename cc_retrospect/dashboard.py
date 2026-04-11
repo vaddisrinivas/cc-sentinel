@@ -42,7 +42,7 @@ def generate_dashboard(config: Config | None = None, days: int = 30) -> str:
     """Generate dashboard JSON string with embedded data."""
     try:
         return _build_dashboard_data(config, days)
-    except Exception as e:
+    except (OSError, ValueError, KeyError, TypeError) as e:
         return json.dumps({
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "error": str(e),
@@ -368,6 +368,61 @@ def _build_dashboard_data(config: Config | None = None, days: int = 30) -> str:
     }
     # ── /Profile stats ───────────────────────────────────────────────────────
 
+    # ── Action chips: top 3 actionable recommendations with $/impact ────────
+    action_chips = []
+    try:
+        from cc_retrospect.analyzers import SavingsAnalyzer
+        savings_result = SavingsAnalyzer().analyze(list(sessions), config)
+        for rec in savings_result.recommendations[:3]:
+            action_chips.append({
+                "text": rec.description,
+                "savings": rec.estimated_savings,
+                "severity": rec.severity,
+            })
+    except (ImportError, ValueError, TypeError):
+        pass
+
+    # ── Session grades: A-D per session based on cost/duration/frustration ──
+    def _grade_session(s):
+        score = 100
+        if s.total_cost > 20: score -= 30
+        elif s.total_cost > 10: score -= 15
+        elif s.total_cost > 5: score -= 5
+        if s.duration_minutes > 120: score -= 20
+        elif s.duration_minutes > 90: score -= 10
+        if s.frustration_count > 3: score -= 20
+        elif s.frustration_count > 1: score -= 10
+        if s.subagent_count > 8: score -= 10
+        if score >= 80: return "A"
+        if score >= 60: return "B"
+        if score >= 40: return "C"
+        return "D"
+
+    session_grades = [{"session_id": s.session_id, "grade": _grade_session(s)} for s in sessions[:50]]
+    grade_streak = "".join(sg["grade"] for sg in session_grades[:10])
+
+    # ── WoW deltas for inline badges ────────────────────────────────────────
+    def _wow_delta(this_val, last_val, fmt="num"):
+        delta = this_val - last_val
+        pct = ((delta / last_val) * 100) if last_val else 0
+        return {"value": round(this_val, 2), "delta": round(delta, 2), "delta_pct": round(pct, 1), "direction": "up" if delta > 0 else "down" if delta < 0 else "flat"}
+
+    wow_deltas = {
+        "cost": _wow_delta(this_week_cost, last_week_cost),
+        "sessions": _wow_delta(this_week_sessions, last_week_sessions),
+        "frustrations": _wow_delta(this_week_frust, last_week_frust),
+        "avg_duration": _wow_delta(this_week_avg_dur, last_week_avg_dur),
+    }
+
+    # ── Daily model cost breakdown (for stacked chart) ──────────────────────
+    daily_model_cost: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for s in sessions:
+        day = (s.start_ts or "")[:10]
+        if day:
+            for m, c in (s.model_breakdown or {}).items():
+                daily_model_cost[day][m] += c
+    daily_model_cost_serializable = {day: dict(models) for day, models in sorted(daily_model_cost.items())}
+
     data = {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "state": state,
@@ -382,6 +437,11 @@ def _build_dashboard_data(config: Config | None = None, days: int = 30) -> str:
         "cost_by_day": dict(sorted(cost_by_day.items())),
         "model_recommendation": model_rec,
         "profile": profile,
+        "action_chips": action_chips,
+        "session_grades": session_grades,
+        "grade_streak": grade_streak,
+        "wow_deltas": wow_deltas,
+        "daily_model_cost": daily_model_cost_serializable,
     }
 
     data_json = json.dumps(data, default=str)

@@ -162,6 +162,10 @@ def _backfill_trends(config: Config) -> None:
 # --- Hook entry points ---
 
 def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
+    """Analyze completed session: cache summary, update state, fire budget alerts.
+
+    Payload: session_id (str), cwd (str)
+    """
     config = config or load_config()
     session_id = payload.get("session_id", "")
     cwd = payload.get("cwd", "")
@@ -331,6 +335,10 @@ def run_stop_hook(payload: dict, *, config: Config | None = None) -> int:
 
 
 def run_session_start_hook(payload: dict, *, config: Config | None = None) -> int:
+    """Show recap of last session, daily health check, digest.
+
+    Payload: cwd (str)
+    """
     config = config or load_config()
     cwd = payload.get("cwd", "")
     if not cwd: return 0
@@ -452,6 +460,10 @@ def run_session_start_hook(payload: dict, *, config: Config | None = None) -> in
 
 
 def run_pre_tool_use(payload: dict, *, config: Config | None = None) -> int:
+    """Intercept tool calls and warn about waste patterns.
+
+    Payload: tool_name (str), tool_input (dict)
+    """
     config = config or load_config()
     tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input", {})
@@ -465,7 +477,7 @@ def run_pre_tool_use(payload: dict, *, config: Config | None = None) -> int:
                 if any(wd in domain for wd in config.thresholds.waste_webfetch_domains):
                     hints.append(config.messages.hint_webfetch_github.format(domain=domain))
             except (ValueError, AttributeError) as e:
-                logger.debug("urlparse failed for WebFetch URL in pre_tool_use: %s", e)
+                logger.warning("urlparse failed for WebFetch URL: %s — %s", url, e)
     if tool_name == "Agent":
         prompt = tool_input.get("prompt", "")
         if any(p in prompt.lower() for p in ["find", "search for", "look for", "where is", "which file", "grep"]) and tool_input.get("subagent_type", "") in ("Explore", ""):
@@ -484,11 +496,22 @@ def run_pre_tool_use(payload: dict, *, config: Config | None = None) -> int:
     live.prev_tool = tool_name
     _save_live_state(config, live)
     if hints and config.hints.pre_tool:
-        for hint in hints: print(f"{config.messages.prefix} {hint}")
+        nudge_text = " | ".join(f"{config.messages.prefix} {h}" for h in hints)
+        response = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "additionalContext": nudge_text,
+            }
+        }
+        print(json.dumps(response))
     return 0
 
 
 def run_post_tool_use(payload: dict, *, config: Config | None = None) -> int:
+    """Track tool usage and nudge for compaction.
+
+    Payload: tool_name (str), tool_input (dict)
+    """
     config = config or load_config()
     live = _load_live_state(config)
     live.tool_count += 1
@@ -506,12 +529,41 @@ def run_post_tool_use(payload: dict, *, config: Config | None = None) -> int:
     elif msg >= th.compact_nudge_second and live.compact_nudged and not live.compact_nudged_2:
         hints.append(config.messages.hint_compact_second.format(count=msg))
         live.compact_nudged_2 = True
+    # Auto-compact: fire at second threshold if enabled
+    if msg >= th.compact_nudge_second and live.compact_nudged_2 and not getattr(live, 'auto_compacted', False):
+        try:
+            from cc_retrospect.session_control import send_compact
+            session_id = payload.get("session_id", "")
+            if session_id and send_compact(session_id):
+                live.auto_compacted = True
+        except (ImportError, OSError) as e:
+            logger.debug("Auto-compact unavailable: %s", e)
     if live.subagent_count == config.thresholds.max_subagents_per_session and not live.subagent_warned:
         hints.append(config.messages.hint_subagent_limit.format(count=live.subagent_count))
         live.subagent_warned = True
+    # Model nudge for simple-tool-only sessions
+    if not getattr(live, 'model_nudge_shown', False) and live.tool_count >= 10:
+        try:
+            from cc_retrospect.session_control import model_nudge
+            nudge = model_nudge({
+                "tool_name": tool_name,
+                "live_state": live,
+            })
+            if nudge:
+                hints.append(nudge)
+                live.model_nudge_shown = True
+        except (ImportError, OSError) as e:
+            logger.debug("Model nudge unavailable: %s", e)
     _save_live_state(config, live)
     if hints and config.hints.post_tool:
-        for hint in hints: print(f"{config.messages.prefix} {hint}")
+        nudge_text = " | ".join(f"{config.messages.prefix} {h}" for h in hints)
+        response = {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": nudge_text,
+            }
+        }
+        print(json.dumps(response))
     return 0
 
 
@@ -573,8 +625,14 @@ def run_user_prompt(payload: dict, *, config: Config | None = None) -> int:
     _save_live_state(config, live)
 
     if hints and config.hints.user_prompt:
-        for hint in hints:
-            print(f"{config.messages.prefix} {hint}")
+        nudge_text = " | ".join(f"{config.messages.prefix} {h}" for h in hints)
+        response = {
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": nudge_text,
+            }
+        }
+        print(json.dumps(response))
 
     return 0
 

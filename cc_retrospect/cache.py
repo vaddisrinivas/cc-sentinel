@@ -23,7 +23,7 @@ def _atomic_write_json(path: Path, data: dict) -> None:
         temp_path = f.name
     try:
         os.replace(temp_path, path)
-    except Exception:
+    except OSError:
         Path(temp_path).unlink(missing_ok=True)
         raise
 
@@ -44,7 +44,7 @@ def load_all_sessions(config: Config, project_filter: str | None = None) -> list
             try:
                 s = SessionSummary.model_validate(entry)
                 cached[s.session_id] = s
-            except Exception as e:
+            except (ValueError, json.JSONDecodeError) as e:
                 logger.debug("Skipping malformed cache entry: %s", e)
     sessions, new_summaries = [], []
     for proj_name, jsonl_path in iter_project_sessions(config.claude_dir):
@@ -78,7 +78,7 @@ def _load_live_state(config: Config) -> LiveSessionState:
     path = _live_state_path(config)
     if path.exists():
         try: return LiveSessionState.model_validate_json(path.read_text(encoding="utf-8"))
-        except Exception as e: logger.debug("Failed to load live state: %s", e)
+        except (ValueError, json.JSONDecodeError, OSError) as e: logger.debug("Failed to load live state: %s", e)
     return LiveSessionState()
 
 

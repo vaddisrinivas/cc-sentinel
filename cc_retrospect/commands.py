@@ -29,31 +29,37 @@ def _print_progress(count: int, label: str = "items", threshold: int = 50) -> No
 
 
 def run_cost(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Cost breakdown by project, model, and time period."""
     payload = payload or {}
     return _render(CostAnalyzer, payload, config=config)
 
 
 def run_habits(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Usage patterns: session lengths, peak hours, tool usage."""
     payload = payload or {}
     return _render(HabitsAnalyzer, payload, config=config)
 
 
 def run_health(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Health checks: session length, cost velocity, cache rate."""
     payload = payload or {}
     return _render(HealthAnalyzer, payload, config=config)
 
 
 def run_tips(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Context-aware tips based on recent session patterns."""
     payload = payload or {}
     return _render(TipsAnalyzer, payload, config=config)
 
 
 def run_waste(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Detect token waste: GitHub fetches, tool chains, wrong model."""
     payload = payload or {}
     return _render(WasteAnalyzer, payload, config=config)
 
 
 def run_compare(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Compare this week vs last week usage."""
     payload = payload or {}
     return _render(CompareAnalyzer, payload, config=config)
 
@@ -78,11 +84,13 @@ def run_report(payload: dict | None = None, *, config: Config | None = None) -> 
 
 
 def run_savings(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Per-habit savings projections based on actual usage."""
     payload = payload or {}
     return _render(SavingsAnalyzer, payload, config=config)
 
 
 def run_model_efficiency(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Analyze model usage efficiency and mismatches."""
     payload = payload or {}
     return _render(ModelAnalyzer, payload, config=config)
 
@@ -132,6 +140,7 @@ def run_digest(payload: dict | None = None, *, config: Config | None = None) -> 
 
 
 def run_hints(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Show current hint/nudge configuration."""
     payload = payload or {}
     config = config or load_config()
     lines = [
@@ -212,6 +221,7 @@ def run_export(payload: dict | None = None, *, config: Config | None = None) -> 
 
 
 def run_trends(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Weekly trend tracking with optional backfill."""
     from cc_retrospect.hooks import _backfill_trends
 
     payload = payload or {}
@@ -350,7 +360,7 @@ def run_all(payload: dict | None = None, *, config: Config | None = None) -> int
         from cc_retrospect.learn import analyze_user_messages
         profile = analyze_user_messages(config)
         results["user_profile"] = profile.model_dump()
-    except Exception:
+    except (OSError, ValueError, ImportError):
         pass
     print(json.dumps(results, default=str, indent=2))
     return 0
@@ -359,3 +369,64 @@ def run_dashboard(payload: dict | None = None, *, config: Config | None = None) 
     """Generate and open the cc-retrospect dashboard."""
     from cc_retrospect.dashboard import run_dashboard as _run
     return _run(payload, config=config)
+
+
+def run_chains(payload: dict | None = None, *, config: Config | None = None) -> int:
+    """Extract tool chain patterns from recent sessions as JSON."""
+    payload = payload or {}
+    config = config or load_config()
+    sessions = load_all_sessions(config)
+    sessions = _filter_sessions(sessions, project=payload.get("project"), days=payload.get("days", 30), config=config)
+
+    chains_data = []
+    for s in sessions:
+        if not s.tool_chains:
+            continue
+        session_chains = {
+            "session_id": s.session_id,
+            "project": s.project,
+            "date": s.start_ts[:10] if s.start_ts else "",
+            "cost": round(s.total_cost, 2),
+            "chains": [{"tool": t, "length": l} for t, l in s.tool_chains],
+        }
+        # Include tool_calls if available (v2.9.0+)
+        if hasattr(s, 'tool_calls') and s.tool_calls:
+            session_chains["tool_calls"] = [
+                {"name": tc.name, "input": tc.input_summary, "output": tc.output_snippet, "error": tc.is_error}
+                for tc in s.tool_calls
+            ]
+        chains_data.append(session_chains)
+
+    if payload.get("json"):
+        print(json.dumps(chains_data, default=str, indent=2))
+    else:
+        # Summary mode
+        from collections import Counter
+        chain_counts = Counter()
+        for cd in chains_data:
+            for c in cd["chains"]:
+                chain_counts[c["tool"]] += c["length"]
+
+        lines = ["## Tool Chain Patterns", ""]
+        lines.append(f"Analyzed {len(sessions)} sessions, found {len(chains_data)} with chains.")
+        lines.append("")
+        if chain_counts:
+            lines.append("| Tool | Total Chain Length |")
+            lines.append("|------|------------------|")
+            for tool, total in chain_counts.most_common(15):
+                lines.append(f"| {tool} | {total} |")
+            lines.append("")
+
+        # Top repeat offenders
+        repeat_sessions = sorted(chains_data, key=lambda x: sum(c["length"] for c in x["chains"]), reverse=True)[:5]
+        if repeat_sessions:
+            lines.append("### Sessions with Longest Chains")
+            lines.append("")
+            for rs in repeat_sessions:
+                top_chain = max(rs["chains"], key=lambda c: c["length"])
+                lines.append(f"- **{rs['project']}** ({rs['date']}): {top_chain['tool']} x{top_chain['length']}, ${rs['cost']:.2f}")
+            lines.append("")
+
+        print("\n".join(lines))
+
+    return 0

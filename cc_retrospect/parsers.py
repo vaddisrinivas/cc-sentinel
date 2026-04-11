@@ -10,7 +10,7 @@ from typing import Iterator
 from urllib.parse import urlparse
 
 from cc_retrospect.config import Config, ModelPricing
-from cc_retrospect.models import UsageRecord, SessionSummary
+from cc_retrospect.models import UsageRecord, SessionSummary, ToolCall
 
 logger = logging.getLogger("cc_retrospect")
 
@@ -110,6 +110,8 @@ def analyze_session(jsonl_path: Path, project: str, config: Config) -> SessionSu
     prev_tool: str | None = None
     chain_length = 0
     chain_records: list[tuple[str, int]] = []
+    tool_calls: list[ToolCall] = []
+    pending_tool_inputs: dict[str, ToolCall] = {}
     keywords = [k.lower() for k in config.thresholds.frustration_keywords]
 
     for entry in iter_jsonl(jsonl_path):
@@ -144,23 +146,41 @@ def analyze_session(jsonl_path: Path, project: str, config: Config) -> SessionSu
                 total_cache_create += rec.cache_creation_tokens; total_cache_read += rec.cache_read_tokens
                 cost = compute_cost(rec, config.pricing); total_cost += cost; model_costs[rec.model] += cost
             for block in entry.get("message", {}).get("content", []):
-                if not isinstance(block, dict) or block.get("type") != "tool_use": continue
-                tool_name = block.get("name", "unknown")
-                tool_counts[tool_name] += 1
-                if tool_name == "Agent": subagent_count += 1
-                if tool_name == "WebFetch":
-                    url = block.get("input", {}).get("url", "") if isinstance(block.get("input"), dict) else ""
-                    if url:
-                        try:
-                            domain = urlparse(url).netloc
-                            if domain: webfetch_domains[domain] += 1
-                        except Exception as e:
-                            logger.debug("urlparse failed: %s", e)
-                if tool_name == prev_tool:
-                    chain_length += 1
-                else:
-                    if prev_tool and chain_length >= 2: chain_records.append((prev_tool, chain_length))
-                    prev_tool = tool_name; chain_length = 1
+                if not isinstance(block, dict): continue
+                block_type = block.get("type")
+                if block_type == "tool_use":
+                    tool_name = block.get("name", "unknown")
+                    tool_counts[tool_name] += 1
+                    if tool_name == "Agent": subagent_count += 1
+                    if tool_name == "WebFetch":
+                        url = block.get("input", {}).get("url", "") if isinstance(block.get("input"), dict) else ""
+                        if url:
+                            try:
+                                domain = urlparse(url).netloc
+                                if domain: webfetch_domains[domain] += 1
+                            except (ValueError, AttributeError) as e:
+                                logger.warning("urlparse failed for %s: %s", url, e)
+                    if tool_name == prev_tool:
+                        chain_length += 1
+                    else:
+                        if prev_tool and chain_length >= 2: chain_records.append((prev_tool, chain_length))
+                        prev_tool = tool_name; chain_length = 1
+                    block_id = block.get("id", "")
+                    input_data = block.get("input", {})
+                    input_summary = json.dumps(input_data)[:500] if input_data else ""
+                    tc = ToolCall(name=tool_name, input_summary=input_summary, ts=ts)
+                    tool_calls.append(tc)
+                    if block_id:
+                        pending_tool_inputs[block_id] = tc
+                elif block_type == "tool_result":
+                    tool_use_id = block.get("tool_use_id", "")
+                    if tool_use_id and tool_use_id in pending_tool_inputs:
+                        tc = pending_tool_inputs.pop(tool_use_id)
+                        content = block.get("content", "")
+                        if isinstance(content, list):
+                            content = " ".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+                        tc.output_snippet = str(content)[:300] if content else ""
+                        tc.is_error = bool(block.get("is_error", False))
 
     if prev_tool and chain_length >= 2: chain_records.append((prev_tool, chain_length))
     duration = 0.0
@@ -182,5 +202,6 @@ def analyze_session(jsonl_path: Path, project: str, config: Config) -> SessionSu
         tool_chains=chain_records, subagent_count=subagent_count,
         mega_prompt_count=mega_count, frustration_count=frust_count,
         frustration_words=dict(frust_words), webfetch_domains=dict(webfetch_domains),
+        tool_calls=tool_calls,
         entrypoint=entrypoint, cwd=cwd, git_branch=git_branch,
     )
