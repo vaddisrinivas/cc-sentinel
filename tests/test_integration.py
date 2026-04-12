@@ -696,6 +696,7 @@ class TestDispatchRouting:
             "all",
             "dashboard",
             "chains",
+            "toolcalls",
         }
         assert expected == set(dispatch._DISPATCH.keys())
 
