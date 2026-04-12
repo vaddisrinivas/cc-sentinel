@@ -4,14 +4,14 @@
     "name": "vaddisrinivas"
   },
   "metadata": {
-    "description": "Proactive Claude Code guardian: intercepts waste in real-time, nudges compact, injects tips, tracks costs. Pure Python, extensible.",
-    "version": "2.9.0"
+    "description": "Proactive Claude Code guardian: intercepts waste in real-time, nudges compact, injects tips, tracks costs. Dashboard with tool call browser, chain patterns, STYLE.md sync, and Magic Create script generator. Pure Python, extensible.",
+    "version": "3.0.0rc2"
   },
   "plugins": [
     {
       "name": "cc-retrospect",
       "source": "./",
-      "description": "Real-time waste interception, auto-compact, session health tracking, and optimization tips for Claude Code."
+      "description": "Real-time waste interception, auto-compact, session health tracking, tool call browser, Magic Create script generator, and optimization tips for Claude Code."
     }
   ]
 }

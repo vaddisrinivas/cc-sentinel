@@ -1,14 +1,21 @@
 {
   "name": "cc-retrospect",
-  "version": "2.9.0",
-  "description": "Claude Code session retrospective: real-time waste interception, cost analytics, and actionable tips.",
+  "version": "3.0.0rc2",
+  "description": "Claude Code session retrospective: real-time waste interception, cost analytics, tool call browser, Magic Create script generator, and actionable tips.",
   "author": {
     "name": "vaddisrinivas",
     "url": "https://github.com/vaddisrinivas"
   },
   "repository": "https://github.com/vaddisrinivas/cc-retrospect",
   "license": "MIT",
-  "keywords": ["cost", "analytics", "waste", "optimization"],
+  "keywords": [
+    "cost",
+    "analytics",
+    "waste",
+    "optimization",
+    "dashboard",
+    "magic-create"
+  ],
   "commands": "./commands/",
   "skills": "./skills/"
 }

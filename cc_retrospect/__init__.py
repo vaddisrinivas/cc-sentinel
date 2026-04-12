@@ -4,7 +4,7 @@ try:
     from importlib.metadata import version as _pkg_version
     __version__ = _pkg_version("cc-retrospect")
 except Exception:
-    __version__ = "3.0.0rc1"
+    __version__ = "3.0.0rc2"
 
 try:
     from cc_retrospect.core import (  # noqa: F401
