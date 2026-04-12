@@ -55,7 +55,7 @@ from cc_retrospect.commands import (
     run_cost, run_habits, run_health, run_tips, run_waste, run_compare,
     run_report, run_savings, run_model_efficiency, run_digest, run_hints,
     run_status, run_export, run_trends, run_reset, run_config, run_uninstall, run_all, run_dashboard,
-    run_chains,
+    run_chains, run_toolcalls,
 )
 
 from cc_retrospect.hooks import (
@@ -94,7 +94,7 @@ __all__ = [
     'run_cost', 'run_habits', 'run_health', 'run_tips', 'run_waste', 'run_compare',
     'run_report', 'run_savings', 'run_model_efficiency', 'run_digest', 'run_hints',
     'run_status', 'run_export', 'run_trends', 'run_reset', 'run_config', 'run_uninstall', 'run_all', 'run_dashboard',
-    'run_chains',
+    'run_chains', 'run_toolcalls',
     # Hooks
     'run_stop_hook', 'run_session_start_hook',
     'run_pre_tool_use', 'run_post_tool_use',
